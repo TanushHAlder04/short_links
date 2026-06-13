@@ -1,0 +1,118 @@
+// This is your Prisma schema file for the ShortLinks analytics platform
+// Database: PostgreSQL (Supabase)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── NextAuth Required Models ─────────────────────────────────────────────────
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── App Models ───────────────────────────────────────────────────────────────
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+
+  accounts Account[]
+  sessions Session[]
+  urls     Url[]
+  apiKeys  ApiKey[]
+}
+
+model Url {
+  id          String    @id @default(cuid())
+  shortCode   String    @unique
+  originalUrl String    @db.Text
+  customAlias String?
+  userId      String?
+  apiKeyId    String?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  isActive    Boolean   @default(true)
+  clickCount  Int       @default(0)
+
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  clicks Click[]
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([expiresAt])
+  @@index([userId, createdAt])
+  @@index([isActive])
+}
+
+model Click {
+  id        String   @id @default(cuid())
+  shortCode String
+  timestamp DateTime @default(now())
+  ipHash    String?
+  country   String?
+  city      String?
+  device    String? // mobile | desktop | tablet
+  browser   String?
+  os        String?
+  referrer  String?  @db.Text
+
+  url Url @relation(fields: [shortCode], references: [shortCode], onDelete: Cascade)
+
+  @@index([shortCode])
+  @@index([timestamp])
+}
+
+model ApiKey {
+  id        String    @id @default(cuid())
+  userId    String
+  keyHash   String    @unique
+  name      String
+  createdAt DateTime  @default(now())
+  lastUsed  DateTime?
+  isActive  Boolean   @default(true)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
