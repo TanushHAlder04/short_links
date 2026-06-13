@@ -2,6 +2,11 @@
 // URL redirect handler with Redis caching and async analytics.
 // Performance path: Redis hit → <5ms redirect. DB miss → ~50ms.
 
+
+export const dynamic = 'force-dynamic'
+export const revalidate = 0
+export const runtime = 'nodejs'
+
 import { redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
@@ -73,7 +78,7 @@ export async function GET(request, { params }) {
   recordClick({ shortCode: shorturl, ip, userAgent, referrer })
 
   // ── Step 6: Increment global redirect counter ─────────────────────────────
-  incrStat('total_clicks').catch(() => {})
+  incrStat('total_clicks').catch(() => { })
 
   // ── Step 7: Redirect ──────────────────────────────────────────────────────
   redirect(urlData.originalUrl)
