@@ -5,8 +5,9 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { prisma } from '@/lib/prisma'
-import { generateShortCode, validateAlias } from '@/lib/shortcode'
-import { bloomAdd, cacheSet, incrStat } from '@/lib/redis'
+import { generateUniqueCode, validateAlias } from '@/lib/shortcode'
+import { shortCodeBloom } from '@/lib/bloom'
+import { cacheSet, incrStat } from '@/lib/redis'
 import { validateApiKey } from '@/lib/apikeys'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/ratelimit'
 import QRCode from 'qrcode'
@@ -71,8 +72,31 @@ export async function POST(request) {
       )
     }
 
-    // ── Determine short code ───────────────────────────────────────────────
+    // ── Validate expiry ────────────────────────────────────────────────────
+    let expiryDate = null
+    if (expiresAt) {
+      expiryDate = new Date(expiresAt)
+      if (expiryDate <= new Date()) {
+        return Response.json({ success: false, message: 'Expiry date must be in the future' }, { status: 400 })
+      }
+    }
+
+    // ── Determine short code and Save to DB ────────────────────────────────
     let shortCode
+    let urlRecord
+
+    const dbInsert = async (code) => {
+      urlRecord = await prisma.url.create({
+        data: {
+          shortCode: code,
+          originalUrl: url,
+          customAlias: customAlias || null,
+          userId,
+          apiKeyId,
+          expiresAt: expiryDate,
+        },
+      })
+    }
 
     if (customAlias) {
       const validation = validateAlias(customAlias)
@@ -87,32 +111,19 @@ export async function POST(request) {
       }
 
       shortCode = customAlias
-      await bloomAdd(shortCode)
+      await dbInsert(shortCode)
+      shortCodeBloom.add(shortCode)
     } else {
-      // Auto-generate unique short code with Bloom filter
-      shortCode = await generateShortCode()
+      // Auto-generate unique short code with optimistic Bloom filter
+      shortCode = await generateUniqueCode({
+        bloomFilter: shortCodeBloom,
+        dbInsertCallback: dbInsert,
+        dbCheckCallback: async (code) => {
+          const existing = await prisma.url.findUnique({ where: { shortCode: code } })
+          return !!existing;
+        }
+      })
     }
-
-    // ── Validate expiry ────────────────────────────────────────────────────
-    let expiryDate = null
-    if (expiresAt) {
-      expiryDate = new Date(expiresAt)
-      if (expiryDate <= new Date()) {
-        return Response.json({ success: false, message: 'Expiry date must be in the future' }, { status: 400 })
-      }
-    }
-
-    // ── Save to PostgreSQL ─────────────────────────────────────────────────
-    const urlRecord = await prisma.url.create({
-      data: {
-        shortCode,
-        originalUrl: url,
-        customAlias: customAlias || null,
-        userId,
-        apiKeyId,
-        expiresAt: expiryDate,
-      },
-    })
 
     // ── Prime Redis cache (warm cache on creation) ────────────────────────
     await cacheSet(shortCode, {

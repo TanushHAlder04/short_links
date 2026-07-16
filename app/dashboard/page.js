@@ -339,6 +339,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     if (status !== 'authenticated') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLinks()
   }, [status, fetchLinks])
 

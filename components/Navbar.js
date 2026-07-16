@@ -70,6 +70,7 @@ export default function Navbar() {
                   onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}
                 >
                   {session.user?.image ? (
+                    // eslint-disable-next-line @next/next/no-img-element
                     <img src={session.user.image} alt="" style={{ width: 26, height: 26, borderRadius: '50%' }} />
                   ) : (
                     <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'var(--gradient-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

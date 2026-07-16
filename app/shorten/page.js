@@ -230,6 +230,7 @@ export default function Shorten() {
               </button>
               {showQR && (
                 <div className="animate-fade-in" style={{ textAlign: 'center', paddingTop: 16 }}>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={result.qrDataUrl} alt="QR Code" style={{ width: 180, height: 180, borderRadius: 12, border: '1px solid var(--border)' }} />
                   <div style={{ marginTop: 12 }}>
                     <button id="download-qr-btn" onClick={handleDownloadQR} className="btn-secondary" style={{ fontSize: '0.875rem', padding: '8px 20px' }}>

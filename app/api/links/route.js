@@ -6,7 +6,8 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { prisma } from '@/lib/prisma'
 import { getAuthUserId } from '@/lib/apikeys'
 import { checkRateLimit } from '@/lib/ratelimit'
-import { generateShortCode } from '@/lib/shortcode'
+import { generateUniqueCode } from '@/lib/shortcode'
+import { shortCodeBloom } from '@/lib/bloom'
 
 const RESERVED_ALIASES = [
   'api',
@@ -166,6 +167,30 @@ export async function POST(request) {
     }
 
     let shortCode
+    let link
+
+    const dbInsert = async (code) => {
+      link = await prisma.url.create({
+        data: {
+          originalUrl,
+          shortCode: code,
+          customAlias: customAlias || null,
+          userId,
+          expiresAt: expiresAt ? new Date(expiresAt) : null,
+        },
+        select: {
+          id: true,
+          shortCode: true,
+          originalUrl: true,
+          customAlias: true,
+          clickCount: true,
+          isActive: true,
+          expiresAt: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      })
+    }
 
     if (customAlias) {
       if (customAlias.length > 30) {
@@ -201,30 +226,18 @@ export async function POST(request) {
       }
 
       shortCode = customAlias
+      await dbInsert(shortCode)
+      shortCodeBloom.add(shortCode)
     } else {
-      shortCode = await generateShortCode()
+      shortCode = await generateUniqueCode({
+        bloomFilter: shortCodeBloom,
+        dbInsertCallback: dbInsert,
+        dbCheckCallback: async (code) => {
+          const existing = await prisma.url.findUnique({ where: { shortCode: code } })
+          return !!existing;
+        }
+      })
     }
-
-    const link = await prisma.url.create({
-      data: {
-        originalUrl,
-        shortCode,
-        customAlias: customAlias || null,
-        userId,
-        expiresAt: expiresAt ? new Date(expiresAt) : null,
-      },
-      select: {
-        id: true,
-        shortCode: true,
-        originalUrl: true,
-        customAlias: true,
-        clickCount: true,
-        isActive: true,
-        expiresAt: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    })
 
     const host = process.env.NEXT_PUBLIC_HOST || new URL(request.url).origin
 

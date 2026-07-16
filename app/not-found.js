@@ -10,7 +10,7 @@ export default function NotFound() {
         </div>
         <h1 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: 12 }}>Short link not found</h1>
         <p style={{ color: 'var(--text-secondary)', marginBottom: 32, fontSize: '0.95rem', maxWidth: 360, margin: '0 auto 32px' }}>
-          This short link doesn't exist or may have been deactivated.
+          This short link doesn&apos;t exist or may have been deactivated.
         </p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
           <Link href="/">

@@ -10,8 +10,9 @@ export const runtime = 'nodejs'
 import { redirect } from 'next/navigation'
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { cacheGet, cacheSet, incrStat } from '@/lib/redis'
+import { incrStat } from '@/lib/redis'
 import { recordClick } from '@/lib/analytics'
+import { fetchCachedUrl } from '@/lib/cache-gatekeeper'
 
 export async function GET(request, { params }) {
   const { shorturl } = await params
@@ -21,40 +22,12 @@ export async function GET(request, { params }) {
     return NextResponse.next()
   }
 
-  // ── Step 1: Check Redis cache (hot path) ─────────────────────────────────
-  let urlData = await cacheGet(shorturl)
+  // ── Step 1: Fetch URL via Cache Gatekeeper ───────────────────────────────
+  const urlData = await fetchCachedUrl(shorturl);
 
   if (!urlData) {
-    // ── Step 2: Cache miss → query PostgreSQL ───────────────────────────────
-    const doc = await prisma.url.findUnique({
-      where: { shortCode: shorturl },
-      select: { originalUrl: true, isActive: true, expiresAt: true },
-    })
-
-    if (!doc) {
-      // 404 — not found
-      redirect(`${process.env.NEXT_PUBLIC_HOST || ''}/not-found?code=${encodeURIComponent(shorturl)}`)
-    }
-
-    urlData = {
-      originalUrl: doc.originalUrl,
-      isActive: doc.isActive,
-      expiresAt: doc.expiresAt ? doc.expiresAt.toISOString() : null,
-    }
-
-    // ── Step 3: Warm the cache ─────────────────────────────────────────────
-    // Use shorter TTL if link expires soon
-    let ttl = 3600
-    if (urlData.expiresAt) {
-      const msToExpiry = new Date(urlData.expiresAt) - Date.now()
-      if (msToExpiry < 0) {
-        // Already expired — don't cache
-        return NextResponse.json({ error: 'Link has expired' }, { status: 410 })
-      }
-      ttl = Math.min(3600, Math.floor(msToExpiry / 1000))
-    }
-
-    await cacheSet(shorturl, urlData, ttl)
+    // 404 — not found
+    redirect(`${process.env.NEXT_PUBLIC_HOST || ''}/not-found?code=${encodeURIComponent(shorturl)}`)
   }
 
   // ── Step 4: Validate active / expiry ─────────────────────────────────────

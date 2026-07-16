@@ -20,7 +20,7 @@ A full-stack URL shortening platform built with **Next.js 16**, **PostgreSQL (Su
 | 📱 **QR Codes** | QR PNG generated on creation; downloadable from shorten page & analytics |
 | 🎯 **Custom Aliases** | Validate, deduplicate, and block reserved routes |
 | ⏰ **Link Expiry** | Optional expiry date; expired links return 410 Gone |
-| 🌸 **Bloom Filter** | Probabilistic collision detection for short code uniqueness |
+| 🌸 **Bloom Filter Layer** | In-memory FNV-1a dual-filter: Uniqueness Gatekeeper (prevents DB reads) & Cache Gatekeeper (prevents 1-hit wonder pollution) |
 | 🔒 **Security** | Ownership checks on all CRUD, IP hashing for privacy, CORS headers |
 | 🌙 **Dark UI** | Glassmorphism design with smooth animations, mobile responsive |
 
@@ -32,11 +32,13 @@ A full-stack URL shortening platform built with **Next.js 16**, **PostgreSQL (Su
 Browser
   │
   ├─ GET /{shortCode}
-  │     └─ Redis cache hit? ─ YES → 307 redirect (< 5ms)
-  │                          NO  → PostgreSQL query → cache + 307 redirect
+  │     └─ Cache Gatekeeper (Bloom Filter)
+  │          ├─ 0 (1st hit) → Bypass Redis → DB query → 307 redirect
+  │          └─ 1 (2nd+ hit) → Redis cache hit? ─ YES → 307 redirect (< 5ms)
+  │                                           NO  → DB query → cache warm + 307
   │
   ├─ POST /api/generate
-  │     └─ Rate limit check (Redis) → Bloom filter → PostgreSQL insert → cache warm
+  │     └─ Rate limit check (Redis) → Uniqueness Gatekeeper (Bloom) → DB insert → cache warm
   │
   └─ /dashboard, /api/analytics
         └─ NextAuth session → PostgreSQL (Prisma ORM)
@@ -217,11 +219,13 @@ short_links/
 │   └── globals.css              # Design system (CSS variables)
 ├── lib/
 │   ├── prisma.js                # Prisma client singleton
-│   ├── redis.js                 # Upstash Redis helpers + Bloom filter
+│   ├── redis.js                 # Upstash Redis cache helpers
 │   ├── ratelimit.js             # Sliding window rate limiter
 │   ├── analytics.js             # Click recording (UA parsing)
 │   ├── apikeys.js               # Key creation, validation, hashing
-│   └── shortcode.js             # nanoid short code generator + alias validation
+│   ├── bloom.js                 # In-memory FNV-1a Bloom Filters (Kirsch-Mitzenmacher)
+│   ├── cache-gatekeeper.js      # Protects Redis from 1-hit wonder pollution
+│   └── shortcode.js             # nanoid generator + callbacks + alias validation
 ├── components/
 │   ├── Navbar.js                # Session-aware navigation
 │   └── Footer.js                # Site footer
@@ -257,5 +261,3 @@ Email: tanushhalder.2004@gmail.com
 MIT — free to use, modify, and distribute.
 
 ---
-
-Made with ❤️ using Next.js, PostgreSQL, and Redis

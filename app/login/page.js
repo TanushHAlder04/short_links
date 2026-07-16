@@ -67,7 +67,7 @@ export default function Login() {
           </div>
 
           <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 20, lineHeight: 1.6 }}>
-            By signing in, you agree to our terms. We don't store passwords — authentication is handled by GitHub and Google.
+            By signing in, you agree to our terms. We don&apos;t store passwords — authentication is handled by GitHub and Google.
           </p>
         </div>
       </div>

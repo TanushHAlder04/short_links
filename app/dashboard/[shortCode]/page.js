@@ -157,6 +157,7 @@ export default function LinkAnalytics() {
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 50, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setShowQR(false)}>
           <div className="glass-card animate-fade-in" style={{ padding: 32, textAlign: 'center' }} onClick={e => e.stopPropagation()}>
             <h3 style={{ fontWeight: 700, marginBottom: 16 }}>QR Code</h3>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={qrUrl} alt="QR" style={{ width: 200, height: 200, borderRadius: 12 }} />
             <div style={{ marginTop: 16 }}>
               <a href={qrUrl} download={`qr-${shortCode}.png`}>
