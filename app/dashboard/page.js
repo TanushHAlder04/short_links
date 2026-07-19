@@ -457,7 +457,7 @@ export default function Dashboard() {
   }
 
   return (
-    <main style={{ padding: '40px 24px', maxWidth: 1200, margin: '0 auto' }}>
+    <main style={{ padding: '120px 24px 40px', maxWidth: 1200, margin: '0 auto' }}>
       {/* Header */}
       <div
         style={{
@@ -675,7 +675,7 @@ export default function Dashboard() {
             )}
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}>
+          <div style={{ overflowX: 'auto', width: '100%' }}>
             <table className="data-table">
               <thead>
                 <tr>

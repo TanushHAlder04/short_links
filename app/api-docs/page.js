@@ -33,7 +33,7 @@ function Endpoint({ method, path, desc, params, example }) {
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 8 }}>Parameters</div>
           {params.map((p, i) => (
-            <div key={i} style={{ display: 'flex', gap: 12, fontSize: '0.8rem', padding: '6px 0', borderBottom: '1px solid rgba(139,92,246,0.08)' }}>
+            <div key={i} style={{ display: 'flex', gap: 12, fontSize: '0.8rem', padding: '6px 0', borderBottom: '1px solid rgba(139,92,246,0.08)', flexWrap: 'wrap' }}>
               <code style={{ color: '#f59e0b', minWidth: 120 }}>{p.name}</code>
               <span className="badge badge-gray" style={{ fontSize: '0.65rem' }}>{p.type}</span>
               <span style={{ color: 'var(--text-muted)' }}>{p.desc}</span>
@@ -94,7 +94,7 @@ export default function ApiDocs() {
   const HOST = process.env.NEXT_PUBLIC_HOST || 'https://your-domain.com'
 
   return (
-    <main style={{ padding: '60px 24px', maxWidth: 860, margin: '0 auto' }}>
+    <main style={{ padding: '120px 24px 60px', maxWidth: 860, margin: '0 auto' }}>
 
       {/* Header */}
       <div style={{ marginBottom: 48 }}>
@@ -249,26 +249,28 @@ curl ${HOST}/api/qr/abc123 --output qr.png`}
           {/* Keys list */}
           {keys.length > 0 && (
             <div className="glass-card" style={{ overflow: 'hidden' }}>
-              <table className="data-table">
-                <thead><tr><th>Name</th><th>Created</th><th>Last Used</th><th>Status</th><th></th></tr></thead>
-                <tbody>
-                  {keys.map(k => (
-                    <tr key={k.id}>
-                      <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}><Key size={14} style={{ marginRight: 6 }} />{k.name}</td>
-                      <td>{new Date(k.createdAt).toLocaleDateString()}</td>
-                      <td>{k.lastUsed ? new Date(k.lastUsed).toLocaleDateString() : 'Never'}</td>
-                      <td><span className={`badge ${k.isActive ? 'badge-green' : 'badge-red'}`}>{k.isActive ? 'Active' : 'Revoked'}</span></td>
-                      <td>
-                        {k.isActive && (
-                          <button id={`revoke-${k.id}`} onClick={() => revokeKey(k.id)} className="btn-ghost" style={{ color: '#ef4444', padding: '6px 10px', fontSize: '0.8rem' }}>
-                            <Trash2 size={14} /> Revoke
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <div style={{ overflowX: 'auto', width: '100%' }}>
+                <table className="data-table">
+                  <thead><tr><th>Name</th><th>Created</th><th>Last Used</th><th>Status</th><th></th></tr></thead>
+                  <tbody>
+                    {keys.map(k => (
+                      <tr key={k.id}>
+                        <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}><Key size={14} style={{ marginRight: 6 }} />{k.name}</td>
+                        <td>{new Date(k.createdAt).toLocaleDateString()}</td>
+                        <td>{k.lastUsed ? new Date(k.lastUsed).toLocaleDateString() : 'Never'}</td>
+                        <td><span className={`badge ${k.isActive ? 'badge-green' : 'badge-red'}`}>{k.isActive ? 'Active' : 'Revoked'}</span></td>
+                        <td>
+                          {k.isActive && (
+                            <button id={`revoke-${k.id}`} onClick={() => revokeKey(k.id)} className="btn-ghost" style={{ color: '#ef4444', padding: '6px 10px', fontSize: '0.8rem' }}>
+                              <Trash2 size={14} /> Revoke
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
         </div>

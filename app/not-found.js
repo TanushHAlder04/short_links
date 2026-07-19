@@ -3,7 +3,7 @@ import { Link2, Home } from 'lucide-react'
 
 export default function NotFound() {
   return (
-    <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '70vh', padding: '24px', textAlign: 'center' }}>
+    <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '70vh', padding: '120px 24px 24px', textAlign: 'center' }}>
       <div style={{ animation: 'fadeInUp 0.5s ease forwards' }}>
         <div style={{ fontSize: '8rem', fontWeight: 900, background: 'var(--gradient-hero)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', lineHeight: 1, marginBottom: 8 }}>
           404

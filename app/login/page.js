@@ -14,7 +14,7 @@ export default function Login() {
   }, [status, router])
 
   return (
-    <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', padding: '24px' }}>
+    <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '80vh', padding: '120px 24px 24px' }}>
       {/* Background */}
       <div style={{ position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: 500, height: 500, background: 'radial-gradient(ellipse, rgba(124,58,237,0.15) 0%, transparent 70%)', pointerEvents: 'none' }} />
 

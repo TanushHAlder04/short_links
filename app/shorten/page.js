@@ -72,7 +72,7 @@ export default function Shorten() {
   const minDateStr = minDate.toISOString().slice(0, 16)
 
   return (
-    <main style={{ padding: '60px 24px', minHeight: '80vh', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
+    <main style={{ padding: '120px 24px 60px', minHeight: '80vh', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
       {/* Background glow */}
       <div style={{ position: 'fixed', top: 0, left: '50%', transform: 'translateX(-50%)', width: 600, height: 400, background: 'radial-gradient(ellipse, rgba(124,58,237,0.12) 0%, transparent 70%)', pointerEvents: 'none' }} />
 

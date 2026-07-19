@@ -115,7 +115,7 @@ export default function LinkAnalytics() {
   }
 
   return (
-    <main style={{ padding: '40px 24px', maxWidth: 1100, margin: '0 auto' }}>
+    <main style={{ padding: '120px 24px 40px', maxWidth: 1100, margin: '0 auto' }}>
 
       {/* Back */}
       <Link href="/dashboard">
@@ -239,27 +239,29 @@ export default function LinkAnalytics() {
           <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)' }}>
             <h3 style={{ fontWeight: 700 }}>Top Referrers</h3>
           </div>
-          <table className="data-table">
-            <thead>
-              <tr><th>Source</th><th>Clicks</th><th>Share</th></tr>
-            </thead>
-            <tbody>
-              {data.topReferrers.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.name}</td>
-                  <td>{r.count}</td>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ height: 6, borderRadius: 3, background: 'var(--bg-card)', width: 100, overflow: 'hidden' }}>
-                        <div style={{ height: '100%', background: 'var(--gradient-purple)', width: `${(r.count / data.topReferrers[0].count) * 100}%`, borderRadius: 3 }} />
+          <div style={{ overflowX: 'auto', width: '100%' }}>
+            <table className="data-table">
+              <thead>
+                <tr><th>Source</th><th>Clicks</th><th>Share</th></tr>
+              </thead>
+              <tbody>
+                {data.topReferrers.map((r, i) => (
+                  <tr key={i}>
+                    <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.name}</td>
+                    <td>{r.count}</td>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ height: 6, borderRadius: 3, background: 'var(--bg-card)', width: 100, overflow: 'hidden' }}>
+                          <div style={{ height: '100%', background: 'var(--gradient-purple)', width: `${(r.count / data.topReferrers[0].count) * 100}%`, borderRadius: 3 }} />
+                        </div>
+                        <span style={{ fontSize: '0.8rem' }}>{((r.count / data.totalClicks) * 100).toFixed(1)}%</span>
                       </div>
-                      <span style={{ fontSize: '0.8rem' }}>{((r.count / data.totalClicks) * 100).toFixed(1)}%</span>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </main>
