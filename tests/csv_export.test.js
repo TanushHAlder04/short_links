@@ -1,15 +1,7 @@
 import { describe, it, expect } from 'vitest'
+import { escapeCsv } from '../lib/csv'
 
-describe('CSV Formula Injection Sanitization', () => {
-  const escapeCsv = (str) => {
-    if (str === null || str === undefined) return '""'
-    let val = String(str)
-    if (/^[=+\-@\t\r]/.test(val)) {
-      val = `'${val}`
-    }
-    const stringified = val.replace(/"/g, '""')
-    return `"${stringified}"`
-  }
+describe('CSV Formula Injection Sanitization (lib/csv.js)', () => {
 
   it('should neutralize formula prefixes (=, +, -, @, \\t, \\r)', () => {
     expect(escapeCsv('=SUM(A1:A10)')).toBe(`"'=SUM(A1:A10)"`)

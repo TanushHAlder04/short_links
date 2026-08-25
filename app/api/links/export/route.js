@@ -6,6 +6,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { prisma } from '@/lib/prisma'
 import { getAuthUserId } from '@/lib/apikeys'
 import { checkRateLimit } from '@/lib/ratelimit'
+import { escapeCsv } from '@/lib/csv'
 
 export async function GET(request) {
   try {
@@ -43,18 +44,6 @@ export async function GET(request) {
         createdAt: true,
       },
     })
-
-    // Escape CSV cell value and sanitize against CSV Formula Injection (DDE / Command Execution)
-    const escapeCsv = (str) => {
-      if (str === null || str === undefined) return '""'
-      let val = String(str)
-      // Neutralize formula injection characters (=, +, -, @, \t, \r)
-      if (/^[=+\-@\t\r]/.test(val)) {
-        val = `'${val}`
-      }
-      const stringified = val.replace(/"/g, '""')
-      return `"${stringified}"`
-    }
 
     const headers = ['shortCode', 'originalUrl', 'iosUrl', 'androidUrl', 'customAlias', 'clickCount', 'isActive', 'expiresAt', 'createdAt']
     const rows = links.map((l) => [

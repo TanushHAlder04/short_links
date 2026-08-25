@@ -1,11 +1,13 @@
 /** @type {import('next').NextConfig} */
+const isDev = process.env.NODE_ENV === 'development'
+
 const ContentSecurityPolicy = `
   default-src 'self';
-  script-src 'self' 'unsafe-inline' https://accounts.google.com https://github.com;
+  script-src 'self' 'unsafe-inline' ${isDev ? "'unsafe-eval' " : ''}https://accounts.google.com https://github.com;
   style-src 'self' 'unsafe-inline';
   img-src 'self' data: blob: https://avatars.githubusercontent.com https://lh3.googleusercontent.com https://*.googleusercontent.com;
   font-src 'self' data:;
-  connect-src 'self' https://accounts.google.com https://api.github.com https://github.com https://*.upstash.io http://ip-api.com;
+  connect-src 'self' https://accounts.google.com https://api.github.com https://github.com;
   form-action 'self' https://accounts.google.com https://github.com;
   frame-ancestors 'none';
   base-uri 'self';

@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { Zap, Mail, Github, Linkedin } from 'lucide-react'
+import { Mail, Github, Linkedin, Link as LinkIcon } from 'lucide-react'
 
 export default function Footer() {
   return (
@@ -20,7 +20,7 @@ export default function Footer() {
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: '1 1 300px', minWidth: 280 }}>
             <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
               <div style={{ width: 28, height: 28, borderRadius: 8, background: 'var(--gradient-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Zap size={15} color="white" />
+                <LinkIcon size={15} color="white" />
               </div>
               <span style={{ fontWeight: 800, fontSize: '1rem' }}>Short<span className="gradient-text">Links</span></span>
             </Link>

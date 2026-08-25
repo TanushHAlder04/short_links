@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
-import { Zap, Menu, X, BarChart3, Code2, ChevronDown, LogOut, User, Link2 } from 'lucide-react'
+import { Menu, X, BarChart3, Code2, ChevronDown, LogOut, User, Link as LinkIcon } from 'lucide-react'
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
@@ -60,7 +60,7 @@ export default function Navbar() {
         {/* Logo */}
         <Link href="/" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: 'var(--gradient-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 2px 12px rgba(124,58,237,0.4)' }}>
-            <Zap size={18} color="white" />
+            <LinkIcon size={18} color="white" />
           </div>
           <span style={{ fontWeight: 800, fontSize: '1.1rem', letterSpacing: '-0.02em' }}>
             Short<span className="gradient-text">Links</span>

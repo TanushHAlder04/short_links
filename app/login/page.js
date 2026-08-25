@@ -3,7 +3,7 @@
 import { signIn, useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import { useEffect } from 'react'
-import { Github, Globe, Zap, BarChart3, Shield } from 'lucide-react'
+import { Github, Globe, Link as LinkIcon, BarChart3, Shield } from 'lucide-react'
 
 export default function Login() {
   const { data: session, status } = useSession()
@@ -22,7 +22,7 @@ export default function Login() {
         {/* Logo */}
         <div style={{ textAlign: 'center', marginBottom: 36 }}>
           <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--gradient-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px', boxShadow: 'var(--shadow-purple)' }}>
-            <Zap size={28} color="white" />
+            <LinkIcon size={28} color="white" />
           </div>
           <h1 style={{ fontSize: '1.75rem', fontWeight: 800, marginBottom: 8 }}>Welcome back</h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>Sign in to access your dashboard and analytics</p>
@@ -35,7 +35,7 @@ export default function Login() {
             {[
               { icon: BarChart3, text: 'Full click analytics & charts', color: '#8b5cf6' },
               { icon: Shield,    text: 'API key management',            color: '#10b981' },
-              { icon: Zap,       text: 'Unlimited link creation',       color: '#f59e0b' },
+              { icon: LinkIcon,  text: 'Unlimited link creation',       color: '#f59e0b' },
             ].map(({ icon: Icon, text, color }, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                 <div style={{ width: 28, height: 28, borderRadius: 8, background: `${color}22`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>

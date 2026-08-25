@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { useSession, signIn } from 'next-auth/react'
-import { Github, Globe, Plus, Trash2, Eye, EyeOff, Copy, Check, Key, Loader2, Terminal, Code2, Zap, Shield, AlertCircle } from 'lucide-react'
+import { Github, Globe, Plus, Trash2, Eye, EyeOff, Copy, Check, Key, Loader2, Terminal, Code2, Shield, AlertCircle } from 'lucide-react'
 
 function CodeBlock({ code, lang = 'bash' }) {
   const [copied, setCopied] = useState(false)
