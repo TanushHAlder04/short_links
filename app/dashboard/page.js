@@ -26,6 +26,8 @@ import {
   Search,
   X,
   Clock,
+  Download,
+  Upload,
 } from 'lucide-react'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -298,6 +300,8 @@ export default function Dashboard() {
   const [copiedId, setCopiedId] = useState(null)
   const [search, setSearch] = useState('')
   const [updatingExpiry, setUpdatingExpiry] = useState(null)
+  const [importing, setImporting] = useState(false)
+  const [importReport, setImportReport] = useState(null)
 
   const fetchLinks = useCallback(async () => {
     setLoading(true)
@@ -342,6 +346,75 @@ export default function Dashboard() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchLinks()
   }, [status, fetchLinks])
+
+  const handleCsvImport = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setImporting(true)
+    setImportReport(null)
+
+    try {
+      const text = await file.text()
+      const res = await fetch('/api/links/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/csv' },
+        body: text,
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        alert(data.error || 'Failed to import CSV')
+      } else {
+        setImportReport(data)
+        fetchLinks()
+      }
+    } catch (err) {
+      console.error('CSV Import error:', err)
+      alert('Failed to import CSV file')
+    } finally {
+      setImporting(false)
+      event.target.value = ''
+    }
+  }
+
+  const handleRetryFailedRows = async () => {
+    if (!importReport || importReport.failed === 0) return
+
+    const failedRows = importReport.results
+      .filter((r) => r.status === 'failed')
+      .map((r) => ({
+        originalUrl: r.originalUrl,
+      }))
+
+    if (failedRows.length === 0) return
+
+    setImporting(true)
+    try {
+      const res = await fetch('/api/links/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: failedRows }),
+      })
+
+      const data = await res.json()
+      if (!res.ok) {
+        alert(data.error || 'Failed to retry failed rows')
+      } else {
+        setImportReport(data)
+        fetchLinks()
+      }
+    } catch (err) {
+      console.error('Retry failed rows error:', err)
+      alert('Failed to retry failed rows')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const handleExportCsv = () => {
+    window.open('/api/links/export', '_blank')
+  }
 
   const filteredLinks = useMemo(() => {
     let links = [...allLinks]
@@ -482,12 +555,63 @@ export default function Dashboard() {
           </p>
         </div>
 
-        <Link href="/shorten">
-          <button id="new-link-btn" type="button" className="btn-primary" style={{ fontSize: '0.9rem' }}>
-            <Plus size={16} /> New Link
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          {/* CSV Import */}
+          <label className="btn-secondary" style={{ fontSize: '0.85rem', cursor: 'pointer', padding: '10px 18px' }}>
+            {importing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />} Import CSV
+            <input type="file" accept=".csv,text/csv" onChange={handleCsvImport} style={{ display: 'none' }} disabled={importing} />
+          </label>
+
+          {/* CSV Export */}
+          <button type="button" onClick={handleExportCsv} className="btn-secondary" style={{ fontSize: '0.85rem', padding: '10px 18px' }}>
+            <Download size={16} /> Export CSV
           </button>
-        </Link>
+
+          <Link href="/shorten">
+            <button id="new-link-btn" type="button" className="btn-primary" style={{ fontSize: '0.9rem', padding: '10px 22px' }}>
+              <Plus size={16} /> New Link
+            </button>
+          </Link>
+        </div>
       </div>
+
+      {/* Import Results Modal */}
+      {importReport && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+          <div className="glass-card animate-fade-in" style={{ padding: 28, maxWidth: 520, width: '100%', maxHeight: '80vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <h3 style={{ fontWeight: 800, fontSize: '1.2rem' }}>Import Report</h3>
+              <button type="button" onClick={() => setImportReport(null)} className="btn-ghost" style={{ padding: 4 }}><X size={18} /></button>
+            </div>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 20, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <span className="badge badge-purple">Total: {importReport.total}</span>
+                <span className="badge badge-green">Imported: {importReport.imported}</span>
+                <span className="badge badge-red">Failed: {importReport.failed}</span>
+              </div>
+              {importReport.failed > 0 && (
+                <button
+                  type="button"
+                  onClick={handleRetryFailedRows}
+                  disabled={importing}
+                  className="btn-secondary"
+                  style={{ fontSize: '0.75rem', padding: '6px 12px' }}
+                >
+                  {importing ? <Loader2 size={12} className="animate-spin" /> : '↻ Retry Failed Rows'}
+                </button>
+              )}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {importReport.results.map((res, i) => (
+                <div key={i} style={{ padding: '8px 12px', borderRadius: 8, background: res.status === 'success' ? 'rgba(16,185,129,0.08)' : 'rgba(239,68,68,0.08)', border: `1px solid ${res.status === 'success' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`, fontSize: '0.8rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 300 }}>Row {res.row}: {res.originalUrl}</span>
+                  <span style={{ fontWeight: 600, color: res.status === 'success' ? '#10b981' : '#fca5a5' }}>{res.status === 'success' ? `/${res.shortCode}` : res.error}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stats */}
       <div

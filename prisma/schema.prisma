@@ -63,17 +63,21 @@ model User {
 }
 
 model Url {
-  id          String    @id @default(cuid())
-  shortCode   String    @unique
-  originalUrl String    @db.Text
-  customAlias String?
-  userId      String?
-  apiKeyId    String?
-  expiresAt   DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  isActive    Boolean   @default(true)
-  clickCount  Int       @default(0)
+  id            String    @id @default(cuid())
+  shortCode     String    @unique
+  originalUrl   String    @db.Text
+  iosUrl        String?   @db.Text
+  androidUrl    String?   @db.Text
+  webhookUrl    String?   @db.Text
+  webhookSecret String?   @db.Text
+  customAlias   String?
+  userId        String?
+  apiKeyId      String?
+  expiresAt     DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  isActive      Boolean   @default(true)
+  clickCount    Int       @default(0)
 
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
   clicks Click[]
@@ -96,11 +100,13 @@ model Click {
   browser   String?
   os        String?
   referrer  String?  @db.Text
+  isBot     Boolean  @default(false)
 
   url Url @relation(fields: [shortCode], references: [shortCode], onDelete: Cascade)
 
   @@index([shortCode])
   @@index([timestamp])
+  @@index([shortCode, isBot])
 }
 
 model ApiKey {

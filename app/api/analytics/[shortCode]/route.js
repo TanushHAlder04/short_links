@@ -21,7 +21,7 @@ export async function GET(request, { params }) {
   // ── Verify ownership ───────────────────────────────────────────────────────
   const urlRecord = await prisma.url.findUnique({
     where: { shortCode },
-    select: { id: true, userId: true, shortCode: true, originalUrl: true, clickCount: true, createdAt: true, isActive: true, expiresAt: true },
+    select: { id: true, userId: true, shortCode: true, originalUrl: true, iosUrl: true, androidUrl: true, webhookUrl: true, webhookSecret: true, clickCount: true, createdAt: true, isActive: true, expiresAt: true },
   })
 
   if (!urlRecord) {
@@ -32,13 +32,22 @@ export async function GET(request, { params }) {
     return Response.json({ error: 'Forbidden' }, { status: 403 })
   }
 
+  // ── Parse bot filter ───────────────────────────────────────────────────────
+  const { searchParams } = new URL(request.url)
+  const includeBots = searchParams.get('includeBots') === 'true'
+
   // ── Clicks over last 30 days ───────────────────────────────────────────────
   const thirtyDaysAgo = new Date()
   thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
 
+  const whereClause = { shortCode, timestamp: { gte: thirtyDaysAgo } }
+  if (!includeBots) {
+    whereClause.isBot = false
+  }
+
   const clicks = await prisma.click.findMany({
-    where: { shortCode, timestamp: { gte: thirtyDaysAgo } },
-    select: { timestamp: true, device: true, browser: true, country: true, referrer: true },
+    where: whereClause,
+    select: { timestamp: true, device: true, browser: true, country: true, referrer: true, isBot: true },
   })
 
   // Group clicks by day

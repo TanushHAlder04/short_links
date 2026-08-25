@@ -41,6 +41,7 @@ export default function LinkAnalytics() {
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
   const [qrUrl, setQrUrl] = useState(null)
+  const [includeBots, setIncludeBots] = useState(false)
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -48,12 +49,13 @@ export default function LinkAnalytics() {
 
   useEffect(() => {
     if (status !== 'authenticated') return
-    fetch(`/api/analytics/${shortCode}`)
+    setLoading(true)
+    fetch(`/api/analytics/${shortCode}?includeBots=${includeBots}`)
       .then(r => r.json())
       .then(d => { if (d.error) setError(d.error); else setData(d) })
       .catch(() => setError('Failed to load analytics'))
       .finally(() => setLoading(false))
-  }, [shortCode, status])
+  }, [shortCode, status, includeBots])
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(`${window.location.origin}/${shortCode}`)
@@ -137,7 +139,15 @@ export default function LinkAnalytics() {
             {data.url.originalUrl}
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button
+            id="bot-toggle-btn"
+            onClick={() => setIncludeBots(!includeBots)}
+            className="btn-secondary"
+            style={{ fontSize: '0.8rem', padding: '6px 14px', background: includeBots ? 'rgba(239,68,68,0.15)' : 'transparent', color: includeBots ? '#fca5a5' : 'var(--text-secondary)' }}
+          >
+            {includeBots ? '🤖 Including Bots' : '🛡️ Bots Filtered'}
+          </button>
           <button id="copy-link-btn" onClick={handleCopy} className="btn-ghost">
             {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
@@ -151,6 +161,30 @@ export default function LinkAnalytics() {
           <button id="delete-btn" onClick={handleDelete} className="btn-ghost" style={{ color: '#ef4444' }}><Trash2 size={16} /></button>
         </div>
       </div>
+
+      {/* Smart Redirect & Webhook Config Details */}
+      {(data.url.iosUrl || data.url.androidUrl || data.url.webhookUrl) && (
+        <div className="glass-card" style={{ padding: '20px 24px', marginBottom: 24, background: 'rgba(255,255,255,0.02)' }}>
+          <h4 style={{ fontWeight: 700, fontSize: '0.9rem', marginBottom: 12, color: 'var(--text-primary)' }}>Configured Overrides & Webhooks</h4>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12, fontSize: '0.8rem' }}>
+            {data.url.iosUrl && (
+              <div style={{ background: 'rgba(139,92,246,0.08)', padding: '10px 14px', borderRadius: 8 }}>
+                <span style={{ color: 'var(--accent-violet)', fontWeight: 600 }}> iOS Target:</span> <span style={{ color: 'var(--text-secondary)' }}>{data.url.iosUrl}</span>
+              </div>
+            )}
+            {data.url.androidUrl && (
+              <div style={{ background: 'rgba(16,185,129,0.08)', padding: '10px 14px', borderRadius: 8 }}>
+                <span style={{ color: '#10b981', fontWeight: 600 }}>🤖 Android Target:</span> <span style={{ color: 'var(--text-secondary)' }}>{data.url.androidUrl}</span>
+              </div>
+            )}
+            {data.url.webhookUrl && (
+              <div style={{ background: 'rgba(245,158,11,0.08)', padding: '10px 14px', borderRadius: 8 }}>
+                <span style={{ color: '#f59e0b', fontWeight: 600 }}>🔔 Milestone Webhook:</span> <span style={{ color: 'var(--text-secondary)' }}>{data.url.webhookUrl}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* QR Modal */}
       {showQR && (

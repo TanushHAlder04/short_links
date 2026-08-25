@@ -120,6 +120,22 @@ export async function PATCH(request, { params }) {
       updates.expiresAt = body.expiresAt ? new Date(body.expiresAt) : null
     }
 
+    if (body.iosUrl !== undefined) {
+      updates.iosUrl = body.iosUrl ? body.iosUrl.trim() : null
+    }
+
+    if (body.androidUrl !== undefined) {
+      updates.androidUrl = body.androidUrl ? body.androidUrl.trim() : null
+    }
+
+    if (body.webhookUrl !== undefined) {
+      updates.webhookUrl = body.webhookUrl ? body.webhookUrl.trim() : null
+    }
+
+    if (body.webhookSecret !== undefined) {
+      updates.webhookSecret = body.webhookSecret ? body.webhookSecret.trim() : null
+    }
+
     if (Object.keys(updates).length === 0) {
       return Response.json(
         { error: 'No valid fields provided for update' },

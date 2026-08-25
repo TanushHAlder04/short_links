@@ -5,7 +5,7 @@
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { prisma } from '@/lib/prisma'
-import { generateUniqueCode, validateAlias } from '@/lib/shortcode'
+import { generateUniqueCode, validateAlias, isValidUrl } from '@/lib/shortcode'
 import { shortCodeBloom } from '@/lib/bloom'
 import { cacheSet, incrStat } from '@/lib/redis'
 import { validateApiKey } from '@/lib/apikeys'
@@ -15,17 +15,27 @@ import QRCode from 'qrcode'
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { url, customAlias, expiresAt } = body
+    const { url, customAlias, expiresAt, iosUrl, androidUrl, webhookUrl, webhookSecret } = body
 
     // ── Validate URL ────────────────────────────────────────────────────────
     if (!url || typeof url !== 'string') {
       return Response.json({ success: false, message: 'URL is required' }, { status: 400 })
     }
 
-    try {
-      new URL(url) // throws if invalid
-    } catch {
-      return Response.json({ success: false, message: 'Invalid URL format' }, { status: 400 })
+    if (!isValidUrl(url)) {
+      return Response.json({ success: false, message: 'Invalid URL. Only http and https URLs are allowed.' }, { status: 400 })
+    }
+
+    if (iosUrl && !isValidUrl(iosUrl)) {
+      return Response.json({ success: false, message: 'Invalid iOS URL. Only http and https URLs are allowed.' }, { status: 400 })
+    }
+
+    if (androidUrl && !isValidUrl(androidUrl)) {
+      return Response.json({ success: false, message: 'Invalid Android URL. Only http and https URLs are allowed.' }, { status: 400 })
+    }
+
+    if (webhookUrl && !isValidUrl(webhookUrl)) {
+      return Response.json({ success: false, message: 'Invalid Webhook URL. Only http and https URLs are allowed.' }, { status: 400 })
     }
 
     // ── Resolve user identity (session or API key) ─────────────────────────
@@ -90,6 +100,10 @@ export async function POST(request) {
         data: {
           shortCode: code,
           originalUrl: url,
+          iosUrl: iosUrl || null,
+          androidUrl: androidUrl || null,
+          webhookUrl: webhookUrl || null,
+          webhookSecret: webhookSecret || null,
           customAlias: customAlias || null,
           userId,
           apiKeyId,
@@ -128,6 +142,11 @@ export async function POST(request) {
     // ── Prime Redis cache (warm cache on creation) ────────────────────────
     await cacheSet(shortCode, {
       originalUrl: url,
+      iosUrl: iosUrl || null,
+      androidUrl: androidUrl || null,
+      webhookUrl: webhookUrl || null,
+      webhookSecret: webhookSecret || null,
+      clickCount: 0,
       isActive: true,
       expiresAt: expiryDate ? expiryDate.toISOString() : null,
     })

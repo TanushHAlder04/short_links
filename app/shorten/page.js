@@ -15,6 +15,11 @@ export default function Shorten() {
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
 
+  const [iosUrl, setIosUrl] = useState('')
+  const [androidUrl, setAndroidUrl] = useState('')
+  const [webhookUrl, setWebhookUrl] = useState('')
+  const [showAdvanced, setShowAdvanced] = useState(false)
+
   const handleGenerate = async () => {
     setError('')
     setResult(null)
@@ -31,6 +36,9 @@ export default function Shorten() {
           url: url.trim(),
           customAlias: mode === 'custom' ? customAlias.trim() : undefined,
           expiresAt: expiresAt || undefined,
+          iosUrl: iosUrl.trim() || undefined,
+          androidUrl: androidUrl.trim() || undefined,
+          webhookUrl: webhookUrl.trim() || undefined,
         }),
       })
       const data = await res.json()
@@ -64,6 +72,9 @@ export default function Shorten() {
     setUrl('')
     setCustomAlias('')
     setExpiresAt('')
+    setIosUrl('')
+    setAndroidUrl('')
+    setWebhookUrl('')
     setError('')
   }
 
@@ -87,7 +98,7 @@ export default function Shorten() {
             Shorten your <span className="gradient-text">link</span>
           </h1>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
-            Create short links with analytics, QR codes, and expiry dates.
+            Create short links with analytics, smart redirects, QR codes, and webhooks.
           </p>
         </div>
 
@@ -153,6 +164,35 @@ export default function Shorten() {
               {mode === 'auto' && (
                 <div style={{ padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                   A unique 7-character code will be generated (e.g. <code style={{ color: 'var(--accent-violet)' }}>aBcD3f7</code>)
+                </div>
+              )}
+            </div>
+
+            {/* Advanced Settings Toggle */}
+            <div style={{ marginBottom: 20 }}>
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setShowAdvanced(!showAdvanced)}
+                style={{ fontSize: '0.85rem', color: 'var(--accent-violet)', padding: '6px 0' }}
+              >
+                {showAdvanced ? '− Hide Advanced Options' : '+ Smart Device Redirects & Webhooks'}
+              </button>
+
+              {showAdvanced && (
+                <div style={{ marginTop: 12, padding: '16px', borderRadius: 'var(--radius-md)', background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border)', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>iOS Target URL (optional)</label>
+                    <input type="url" className="input-field" placeholder="https://apps.apple.com/app/id..." value={iosUrl} onChange={e => setIosUrl(e.target.value)} style={{ fontSize: '0.85rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>Android Target URL (optional)</label>
+                    <input type="url" className="input-field" placeholder="https://play.google.com/store/apps/details?id=..." value={androidUrl} onChange={e => setAndroidUrl(e.target.value)} style={{ fontSize: '0.85rem' }} />
+                  </div>
+                  <div>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>Click Milestone Webhook URL (optional)</label>
+                    <input type="url" className="input-field" placeholder="https://your-api.com/webhooks/clicks" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} style={{ fontSize: '0.85rem' }} />
+                  </div>
                 </div>
               )}
             </div>
