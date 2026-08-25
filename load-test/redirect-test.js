@@ -11,7 +11,7 @@ export const options = {
   },
 };
 
-export default function () {
+export default function redirectLoadTest() {
   const targetHost = __ENV.TARGET_HOST || 'http://localhost:3000';
   const targetCode = __ENV.TARGET_CODE || 'xK9w2a';
   const res = http.get(`${targetHost}/${targetCode}`, { redirects: 0 }); 

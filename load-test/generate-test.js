@@ -10,7 +10,7 @@ export const options = {
   },
 };
 
-export default function () {
+export default function generateLoadTest() {
   const targetHost = __ENV.TARGET_HOST || 'http://localhost:3000';
   const payload = JSON.stringify({
     url: 'https://example.com/test-page',

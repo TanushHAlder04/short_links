@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useSession, signOut } from 'next-auth/react'
-import { Menu, X, BarChart3, Code2, ChevronDown, LogOut, User, Link as LinkIcon } from 'lucide-react'
+import { Menu, X, BarChart3, Code2, ChevronDown, LogOut, User, Link as LinkIcon, Link2 } from 'lucide-react'
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false)
@@ -178,6 +178,7 @@ export default function Navbar() {
             <>
               <div style={{ padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
                 {session.user?.image ? (
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img src={session.user.image} alt="" referrerPolicy="no-referrer" style={{ width: 32, height: 32, borderRadius: '50%' }} />
                 ) : (
                   <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--gradient-purple)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

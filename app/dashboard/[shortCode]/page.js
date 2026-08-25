@@ -49,6 +49,7 @@ export default function LinkAnalytics() {
 
   useEffect(() => {
     if (status !== 'authenticated') return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true)
     fetch(`/api/analytics/${shortCode}?includeBots=${includeBots}`)
       .then(r => r.json())
