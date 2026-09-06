@@ -1,29 +1,25 @@
-// app/[shorturl]/route.js
 // URL redirect handler with Redis caching and async analytics.
 // Performance path: Redis hit → <5ms redirect. DB miss → ~50ms.
 
-
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
-export const runtime = 'nodejs'
-
-import { redirect } from 'next/navigation'
+import { redirect , notFound } from 'next/navigation'
 import { NextResponse, after } from 'next/server'
-import { prisma } from '@/lib/prisma'
 import { incrStat } from '@/lib/redis'
 import { recordClick } from '@/lib/analytics'
 import { fetchCachedUrl } from '@/lib/cache-gatekeeper'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/ratelimit'
 
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+
 export async function GET(request, { params }) {
   const { shorturl } = await params
 
-  // Skip Next.js internals
+  // Ignore requests for special paths (e.g., favicon.ico, _next/*, etc.)
   if (shorturl.startsWith('_') || shorturl === 'favicon.ico') {
-    return NextResponse.next()
+     notFound()
   }
 
-  // ── Step 0: Rate Limit Check ─────────────────────────────────────────────
+  //Extract client IP address from headers (x-forwarded-for or x-real-ip) and Check Rate Limit 
   const ip =
     request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
     request.headers.get('x-real-ip') ||
@@ -45,43 +41,53 @@ export async function GET(request, { params }) {
     )
   }
 
-  // ── Step 1: Fetch URL via Cache Gatekeeper ───────────────────────────────
+  //  Fetch URL via Cache Gatekeeper
   const urlData = await fetchCachedUrl(shorturl);
 
   if (!urlData) {
     // 404 — not found
-    redirect(`${process.env.NEXT_PUBLIC_HOST || ''}/not-found?code=${encodeURIComponent(shorturl)}`)
+    redirect(`/not-found?code=${encodeURIComponent(shorturl)}`)
   }
 
-  // ── Step 4: Validate active / expiry & Evaluate Smart Device Target ───────
-  if (!urlData.isActive) {
-    return NextResponse.json({ error: 'Link is inactive' }, { status: 410 })
+  //  Validate Link Status and Expiration
+const isExpired = urlData.expiresAt && new Date(urlData.expiresAt) < new Date()
+  if (!urlData.isActive || isExpired) {
+    const reason = !urlData.isActive ? 'inactive' : 'expired'
+    redirect(`/link-unavailable?reason=${reason}`)
   }
-
-  if (urlData.expiresAt && new Date(urlData.expiresAt) < new Date()) {
-    return NextResponse.json({ error: 'Link has expired' }, { status: 410 })
-  }
-
+//User-Agent Targetted Device Routing
   const userAgent = request.headers.get('user-agent') || ''
   const referrer = request.headers.get('referer') || null
+  const targetUrl = resolveTargetUrl(urlData, userAgent)
 
-  // Smart Device Redirect Override: iOS vs Android vs Fallback Original URL
-  let targetUrl = urlData.originalUrl
-  if (userAgent) {
-    const ua = userAgent.toLowerCase()
-    if ((ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod') || ua.includes('ios')) && urlData.iosUrl) {
-      targetUrl = urlData.iosUrl
-    } else if (ua.includes('android') && urlData.androidUrl) {
-      targetUrl = urlData.androidUrl
+  //  Safe Background Analytics Execution
+  after(async () => {
+    try {
+      await Promise.allSettled([
+        recordClick({ shortCode: shorturl, ip, userAgent, referrer }),
+        incrStat('total_clicks')
+      ])
+    } catch (err) {
+      console.error('Failed to log analytics:', err)
     }
-  }
-
-  // ── Step 5: Background Analytics via after() (Serverless Safe) ────────────
-  after(() => {
-    recordClick({ shortCode: shorturl, ip, userAgent, referrer })
-    incrStat('total_clicks').catch(() => { })
   })
 
-  // ── Step 6: Redirect ──────────────────────────────────────────────────────
+  // Perform Redirect
   redirect(targetUrl)
+
+}
+
+ //Resolves link target URL based on client device platform.
+function resolveTargetUrl(urlData, userAgent) {
+  if (!userAgent) return urlData.originalUrl
+
+  const ua = userAgent.toLowerCase()
+  const isIos = /iphone|ipad|ipod|ios/.test(ua)
+  const isAndroid = ua.includes('android')
+
+  if (isIos && urlData.iosUrl) return urlData.iosUrl
+  if (isAndroid && urlData.androidUrl) return urlData.androidUrl
+
+  return urlData.originalUrl 
+  
 }
