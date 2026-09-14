@@ -45,8 +45,8 @@ export async function GET(request, { params }) {
   const urlData = await fetchCachedUrl(shorturl);
 
   if (!urlData) {
-    // 404 — not found
-    redirect(`/not-found?code=${encodeURIComponent(shorturl)}`)
+    // 404 — short link doesn't exist
+    notFound()
   }
 
   //  Validate Link Status and Expiration

@@ -2,7 +2,7 @@
 
 A full-stack URL shortening platform built with **Next.js 16 (App Router)**, **PostgreSQL (Supabase)**, **Upstash Redis**, and **NextAuth.js**. Designed for fast redirects, comprehensive analytics, and developer integrations.
 
-> 🚀 **Live Demo:** [https://short-links-mlku.vercel.app/](https://short-links-mlku.vercel.app/)  
+> 🚀 **Live:** [https://short-links-mlku.vercel.app/](https://short-links-mlku.vercel.app/)  
 > 📂 **GitHub:** [TanushHAlder04/short_links](https://github.com/TanushHAlder04/short_links)
 
 ---
@@ -271,16 +271,6 @@ Run the test suite:
 npm test
 ```
 
-### Continuous Integration (`GitHub Actions`)
-
-The workflow defined in `.github/workflows/ci.yml` triggers on all pushes and pull requests to `main` or `master`:
-1. Checks out repository code
-2. Configures Node.js 20 with dependency caching
-3. Runs clean install (`npm ci`)
-4. Generates Prisma client (`npx prisma generate`)
-5. Executes linter (`npm run lint`)
-6. Executes Vitest test suite (`npm test`)
-
 ---
 
 ## 🚦 Load Testing (`k6`)
@@ -363,9 +353,6 @@ Visit [http://localhost:3000](http://localhost:3000).
 
 ```
 short_links/
-├── .github/
-│   └── workflows/
-│       └── ci.yml               # GitHub Actions CI pipeline
 ├── app/
 │   ├── [shorturl]/
 │   │   └── route.js             # Dynamic redirect handler with smart routing & after() analytics
@@ -432,6 +419,11 @@ short_links/
 
 ---
 
+
+## 📄 License
+
+MIT License. Free for personal and commercial use.
+
 ## 👨‍💻 Author & Contact
 
 **Tanush Halder**  
@@ -439,7 +431,3 @@ short_links/
 - Email: [tanushhalder.2004@gmail.com](mailto:tanushhalder.2004@gmail.com)
 
 ---
-
-## 📄 License
-
-MIT License. Free for personal and commercial use.

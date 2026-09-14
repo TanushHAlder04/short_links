@@ -1,13 +1,7 @@
-'use client'
-
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
 import { Link2, Home } from 'lucide-react'
 
 export default function NotFound() {
-  const searchParams = useSearchParams()
-  const code = searchParams.get('code')
-
   return (
     <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '70vh', padding: '120px 24px 24px', textAlign: 'center' }}>
       <div style={{ animation: 'fadeInUp 0.5s ease forwards' }}>
@@ -21,13 +15,7 @@ export default function NotFound() {
         </h1>
 
         <p style={{ color: 'var(--text-secondary)', marginBottom: 32, fontSize: '0.95rem', maxWidth: 400, margin: '0 auto 32px' }}>
-          {code ? (
-            <>
-              The short link <strong style={{ color: 'var(--text-primary)', wordBreak: 'break-all' }}>&quot;{code}&quot;</strong> doesn&apos;t exist, has expired, or was removed.
-            </>
-          ) : (
-            "This short link doesn't exist or may have been deactivated."
-          )}
+          This short link doesn&apos;t exist, has expired, or was removed.
         </p>
 
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
