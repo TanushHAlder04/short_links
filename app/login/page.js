@@ -49,14 +49,6 @@ export default function Login() {
           {/* OAuth buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <button
-              id="github-login-btn"
-              onClick={() => signIn('github', { callbackUrl: '/dashboard' })}
-              className="btn-secondary"
-              style={{ width: '100%', padding: '14px', justifyContent: 'center', fontSize: '0.95rem' }}
-            >
-              <Github size={20} /> Continue with GitHub
-            </button>
-            <button
               id="google-login-btn"
               onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
               className="btn-primary"
@@ -64,6 +56,15 @@ export default function Login() {
             >
               <Globe size={20} /> Continue with Google
             </button>
+            <button
+              id="github-login-btn"
+              onClick={() => signIn('github', { callbackUrl: '/dashboard' })}
+              className="btn-secondary"
+              style={{ width: '100%', padding: '14px', justifyContent: 'center', fontSize: '0.95rem' }}
+            >
+              <Github size={20} /> Continue with GitHub
+            </button>
+            
           </div>
 
           <p style={{ textAlign: 'center', fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: 20, lineHeight: 1.6 }}>
