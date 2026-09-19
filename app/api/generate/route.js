@@ -7,15 +7,17 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { prisma } from '@/lib/prisma'
 import { generateUniqueCode, validateAlias, isValidUrl } from '@/lib/shortcode'
 import { shortCodeBloom } from '@/lib/bloom'
-import { cacheSet, incrStat } from '@/lib/redis'
+import { cacheSet } from '@/lib/redis'
 import { validateApiKey } from '@/lib/apikeys'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/ratelimit'
 import QRCode from 'qrcode'
+import { validateLinkOptions, ValidationError } from '@/lib/link-validation'
 
 export async function POST(request) {
   try {
-    const body = await request.json()
-    const { url, customAlias, expiresAt, iosUrl, androidUrl, webhookUrl, webhookSecret } = body
+    const body = await request.json().catch(() => { throw new ValidationError('Invalid JSON') })
+    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ValidationError('Expected a JSON object')
+    const { url, customAlias } = body
 
     // ── Validate URL ────────────────────────────────────────────────────────
     if (!url || typeof url !== 'string') {
@@ -26,19 +28,6 @@ export async function POST(request) {
       return Response.json({ success: false, message: 'Invalid URL. Only http and https URLs are allowed.' }, { status: 400 })
     }
 
-    if (iosUrl && !isValidUrl(iosUrl)) {
-      return Response.json({ success: false, message: 'Invalid iOS URL. Only http and https URLs are allowed.' }, { status: 400 })
-    }
-
-    if (androidUrl && !isValidUrl(androidUrl)) {
-      return Response.json({ success: false, message: 'Invalid Android URL. Only http and https URLs are allowed.' }, { status: 400 })
-    }
-
-    if (webhookUrl && !isValidUrl(webhookUrl)) {
-      return Response.json({ success: false, message: 'Invalid Webhook URL. Only http and https URLs are allowed.' }, { status: 400 })
-    }
-
-    // ── Resolve user identity (session or API key) ─────────────────────────
     const session = await getServerSession(authOptions)
     let userId = session?.user?.id || null
     let apiKeyId = null
@@ -47,6 +36,7 @@ export async function POST(request) {
       const authHeader = request.headers.get('Authorization')
       if (authHeader) {
         const apiKey = await validateApiKey(authHeader)
+        if (!apiKey) return Response.json({ success: false, message: 'Invalid API key' }, { status: 401 })
         if (apiKey) {
           userId = apiKey.userId
           apiKeyId = apiKey.id
@@ -76,22 +66,18 @@ export async function POST(request) {
             'X-RateLimit-Limit': String(limitConfig.limit),
             'X-RateLimit-Remaining': '0',
             'X-RateLimit-Reset': String(reset),
-            'Retry-After': String(Math.ceil(limitConfig.windowMs / 1000)),
+            'Retry-After': String(Math.max(1, reset - Math.floor(Date.now() / 1000))),
           },
         }
       )
     }
 
     // ── Validate expiry ────────────────────────────────────────────────────
-    let expiryDate = null
-    if (expiresAt) {
-      expiryDate = new Date(expiresAt)
-      if (expiryDate <= new Date()) {
-        return Response.json({ success: false, message: 'Expiry date must be in the future' }, { status: 400 })
-      }
-    }
+    const options = await validateLinkOptions(body)
+    const expiryDate = options.expiresAt || null
+    const { iosUrl, androidUrl, webhookUrl, webhookSecret } = options
+    if (customAlias != null && typeof customAlias !== 'string') throw new ValidationError('Alias must be a string')
 
-    // ── Determine short code and Save to DB ────────────────────────────────
     let shortCode
     let urlRecord
 
@@ -151,8 +137,7 @@ export async function POST(request) {
       expiresAt: expiryDate ? expiryDate.toISOString() : null,
     })
 
-    // ── Increment global stats ────────────────────────────────────────────
-    await incrStat('total_links')
+    // Global totals are read from PostgreSQL, including bulk imports.
 
     // ── Generate QR code ──────────────────────────────────────────────────
     const shortUrl = `${process.env.NEXT_PUBLIC_HOST}/${shortCode}`
@@ -170,8 +155,10 @@ export async function POST(request) {
       qrDataUrl,
       expiresAt: expiryDate,
       createdAt: urlRecord.createdAt,
-    })
+    }, { headers: { 'X-RateLimit-Limit': String(limitConfig.limit), 'X-RateLimit-Remaining': String(remaining), 'X-RateLimit-Reset': String(reset) } })
   } catch (err) {
+    if (err instanceof ValidationError) return Response.json({ success: false, message: err.message }, { status: 400 })
+    if (err.code === 'P2002') return Response.json({ success: false, message: 'This custom alias is already taken' }, { status: 409 })
     console.error('[generate] Error:', err)
     return Response.json({ success: false, message: 'Internal server error' }, { status: 500 })
   }

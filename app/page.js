@@ -1,25 +1,24 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Zap, BarChart3, Shield, QrCode, Key, Globe, ArrowRight, Github, Link2 } from 'lucide-react'
 
 // ─── Animated counter hook ────────────────────────────────────────────────────
 function useCountUp(target, duration = 2000) {
   const [count, setCount] = useState(0)
-  const started = useRef(false)
   useEffect(() => {
-    if (started.current || target === 0) return
-    started.current = true
+    let frame
     const startTime = performance.now()
     const step = (currentTime) => {
       const elapsed = currentTime - startTime
       const progress = Math.min(elapsed / duration, 1)
       const eased = 1 - Math.pow(1 - progress, 3)
       setCount(Math.floor(eased * target))
-      if (progress < 1) requestAnimationFrame(step)
+      if (progress < 1) frame = requestAnimationFrame(step)
     }
-    requestAnimationFrame(step)
+    frame = requestAnimationFrame(step)
+    return () => cancelAnimationFrame(frame)
   }, [target, duration])
   return count
 }
@@ -51,14 +50,14 @@ export default function Home() {
   const [stats, setStats] = useState({ totalLinks: 0, totalClicks: 0 })
 
   useEffect(() => {
-    fetch('/api/stats').then(r => r.json()).then(setStats).catch(() => { })
+    fetch('/api/stats').then(r => { if (!r.ok) throw new Error('Stats unavailable'); return r.json() }).then(setStats).catch(() => { })
   }, [])
 
-  const linksCount = useCountUp(stats.totalLinks || 12847)
-  const clicksCount = useCountUp(stats.totalClicks || 284519)
+  const linksCount = useCountUp(stats.totalLinks || 0)
+  const clicksCount = useCountUp(stats.totalClicks || 0)
 
   const features = [
-    { icon: Zap, title: 'Redis Caching', color: '#f59e0b', desc: 'Hot URLs served in <5ms via Upstash Redis. Cache-first architecture with automatic TTL and invalidation.' },
+    { icon: Zap, title: 'Redis Caching', color: '#f59e0b', desc: 'Frequently visited URLs are cached with Upstash Redis. Cache-first architecture with automatic TTL and invalidation.' },
     { icon: BarChart3, title: 'Click Analytics', color: '#8b5cf6', desc: 'Device, browser, country, and referrer breakdown for every link. 30-day timeline with live charts.' },
     { icon: Shield, title: 'Rate Limiting', color: '#06b6d4', desc: 'Sliding-window rate limiter per IP and user. Protects against abuse and ensures fair usage.' },
     { icon: QrCode, title: 'QR Code Generation', color: '#ec4899', desc: 'Instant QR codes for every link. Download as PNG. Perfect for print campaigns and events.' },
@@ -118,23 +117,23 @@ export default function Home() {
           <div style={{ display: 'flex', gap: 'clamp(1rem, 4vw, 4rem)', marginTop: 80, justifyContent: 'center', flexWrap: 'nowrap', animation: 'fadeInUp 0.7s 0.45s ease forwards', opacity: 0, width: '100%' }}>
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 'clamp(1.5rem, 5vw, 3rem)', fontWeight: 900, background: 'linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                {linksCount.toLocaleString()}+
+                {linksCount.toLocaleString()}
               </div>
               <div style={{ fontSize: 'clamp(0.7rem, 2vw, 0.9rem)', color: '#6b6585', marginTop: 4, whiteSpace: 'nowrap' }}>Links Shortened</div>
             </div>
             <div style={{ width: 1, background: 'rgba(255,255,255,0.05)', alignSelf: 'stretch' }} />
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 'clamp(1.5rem, 5vw, 3rem)', fontWeight: 900, background: 'linear-gradient(135deg, #8b5cf6 0%, #6366f1 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                {clicksCount.toLocaleString()}+
+                {clicksCount.toLocaleString()}
               </div>
-              <div style={{ fontSize: 'clamp(0.7rem, 2vw, 0.9rem)', color: '#6b6585', marginTop: 4, whiteSpace: 'nowrap' }}>Total Redirects</div>
+              <div style={{ fontSize: 'clamp(0.7rem, 2vw, 0.9rem)', color: '#6b6585', marginTop: 4, whiteSpace: 'nowrap' }}>Human Clicks</div>
             </div>
             <div style={{ width: 1, background: 'rgba(255,255,255,0.05)', alignSelf: 'stretch' }} />
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontSize: 'clamp(1.5rem, 5vw, 3rem)', fontWeight: 900, background: 'linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
-                &lt;5ms
+                Cached
               </div>
-              <div style={{ fontSize: 'clamp(0.7rem, 2vw, 0.9rem)', color: '#6b6585', marginTop: 4, whiteSpace: 'nowrap' }}>Cached Redirect</div>
+              <div style={{ fontSize: 'clamp(0.7rem, 2vw, 0.9rem)', color: '#6b6585', marginTop: 4, whiteSpace: 'nowrap' }}>Redirects</div>
             </div>
           </div>
         </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -299,43 +299,45 @@ export default function Dashboard() {
   const [order, setOrder] = useState('desc')
   const [copiedId, setCopiedId] = useState(null)
   const [search, setSearch] = useState('')
+  const [query, setQuery] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const requestId = useRef(0)
+
+  useEffect(() => {
+    const timer = setTimeout(() => { setQuery(search.trim()); setPage(1) }, 300)
+    return () => clearTimeout(timer)
+  }, [search])
   const [updatingExpiry, setUpdatingExpiry] = useState(null)
   const [importing, setImporting] = useState(false)
   const [importReport, setImportReport] = useState(null)
 
   const fetchLinks = useCallback(async () => {
+    const id = ++requestId.current
     setLoading(true)
+    setLoadError('')
 
     try {
       const requestSortBy = sortBy === 'status' ? 'createdAt' : sortBy
 
       const res = await fetch(
-        `/api/links?page=${page}&limit=15&sortBy=${requestSortBy}&order=${order}`
+        `/api/links?page=${page}&limit=15&sortBy=${requestSortBy}&order=${order}&q=${encodeURIComponent(query)}`
       )
 
       const data = await res.json()
+      if (id !== requestId.current) return
+      if (!res.ok) throw new Error(data.error || 'Failed to load links')
       const links = data.links || []
 
       setAllLinks(links)
       setPagination(data.pagination || { pages: 1, total: 0 })
 
-      const totalClicks = links.reduce((sum, link) => sum + Number(link.clickCount || 0), 0)
-      const activeLinks = links.filter((link) => getLinkStatus(link) === 'active').length
-      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      const thisWeek = links.filter((link) => new Date(link.createdAt) >= sevenDaysAgo).length
-
-      setStats({
-        total: data.pagination?.total || 0,
-        clicks: totalClicks,
-        active: activeLinks,
-        thisWeek,
-      })
+      setStats(data.stats || { total: 0, clicks: 0, active: 0, thisWeek: 0 })
     } catch (error) {
-      console.error('Failed to fetch dashboard links:', error)
+      if (id === requestId.current) setLoadError(error.message)
     } finally {
-      setLoading(false)
+      if (id === requestId.current) setLoading(false)
     }
-  }, [page, sortBy, order])
+  }, [page, sortBy, order, query])
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -383,9 +385,7 @@ export default function Dashboard() {
 
     const failedRows = importReport.results
       .filter((r) => r.status === 'failed')
-      .map((r) => ({
-        originalUrl: r.originalUrl,
-      }))
+      .map((r) => r.input || { originalUrl: r.originalUrl })
 
     if (failedRows.length === 0) return
 
@@ -419,16 +419,6 @@ export default function Dashboard() {
   const filteredLinks = useMemo(() => {
     let links = [...allLinks]
 
-    if (search.trim()) {
-      const query = search.toLowerCase()
-
-      links = links.filter(
-        (link) =>
-          link.shortCode.toLowerCase().includes(query) ||
-          link.originalUrl.toLowerCase().includes(query)
-      )
-    }
-
     if (sortBy === 'status') {
       const statusOrder = {
         active: 1,
@@ -445,7 +435,7 @@ export default function Dashboard() {
     }
 
     return links
-  }, [allLinks, search, sortBy, order])
+  }, [allLinks, sortBy, order])
 
   const handleCopy = async (link) => {
     const shortUrl = `${window.location.origin}/${link.shortCode}`
@@ -625,7 +615,7 @@ export default function Dashboard() {
         <StatCard
           icon={Link2}
           label="Total Links"
-          value={pagination.total}
+          value={stats.total}
           color="#8b5cf6"
           loading={loading}
         />
@@ -654,6 +644,8 @@ export default function Dashboard() {
           loading={loading}
         />
       </div>
+
+      {loadError && <p role="alert" style={{ color: "#fca5a5", marginBottom: 16 }}>{loadError}</p>}
 
       {/* Links Table */}
       <div className="glass-card" style={{ overflow: 'hidden' }}>
@@ -840,13 +832,13 @@ export default function Dashboard() {
               color: 'var(--text-muted)',
             }}
           >
-            Showing {filteredLinks.length} of {allLinks.length} links matching &ldquo;
+            Showing {filteredLinks.length} of {pagination.total} links matching &ldquo;
             {search}&rdquo;
           </div>
         )}
 
         {/* Pagination */}
-        {pagination.pages > 1 && !search && sortBy !== 'status' && (
+        {pagination.pages > 1 && (
           <div
             style={{
               padding: '16px 24px',

@@ -1,74 +1,36 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-
-let mockCount = 2
-let shouldThrow = false
-
-vi.mock('../lib/redis', () => {
-  return {
-    redis: {
-      pipeline: () => ({
-        zremrangebyscore: vi.fn(),
-        zcard: vi.fn(),
-        zadd: vi.fn(),
-        expire: vi.fn(),
-        exec: vi.fn().mockImplementation(async () => {
-          if (shouldThrow) {
-            throw new Error('Upstash connection timeout')
-          }
-          return [0, mockCount]
-        }),
-      }),
-    },
-  }
-})
-
+vi.mock('../lib/redis', () => ({ redis: { eval: vi.fn() } }))
+import { redis } from '../lib/redis'
 import { checkRateLimit, RATE_LIMITS } from '../lib/ratelimit'
-
-describe('Rate Limiter (lib/ratelimit.js)', () => {
-  beforeEach(() => {
-    mockCount = 2
-    shouldThrow = false
+beforeEach(() => vi.clearAllMocks())
+describe('Atomic rate limiter', () => {
+  it('preserves the remaining count and future reset from Redis', async () => {
+    const reset = Math.ceil(Date.now() / 1000) + 45
+    redis.eval.mockResolvedValue([1, 2, reset, 3])
+    expect(await checkRateLimit('user:1', { limit: 5, windowMs: 60000 })).toEqual({ allowed: true, remaining: 2, reset, count: 3 })
+    expect(redis.eval).toHaveBeenCalledWith(expect.stringContaining("redis.call('ZADD'"), ['rl:user:1'], [expect.any(Number), 60000, 5, expect.any(String)])
   })
-
-  it('should allow requests within limit threshold', async () => {
-    mockCount = 2
-    const res = await checkRateLimit('test-ip-1', { limit: 5, windowMs: 60000 })
-    expect(res.allowed).toBe(true)
-    expect(res.remaining).toBe(2) // 5 - 2 - 1 = 2
+  it('allows the last slot and rejects subsequent requests', async () => {
+    redis.eval.mockResolvedValueOnce([1, 0, 999, 5]).mockResolvedValueOnce([0, 0, 999, 5])
+    expect((await checkRateLimit('a')).allowed).toBe(true)
+    expect((await checkRateLimit('a')).allowed).toBe(false)
   })
-
-  it('should allow request when exactly one slot remains', async () => {
-    mockCount = 4
-    const res = await checkRateLimit('test-ip-2', { limit: 5, windowMs: 60000 })
-    expect(res.allowed).toBe(true)
-    expect(res.remaining).toBe(0) // 5 - 4 - 1 = 0
+  it('uses distinct members for concurrent calls in the same millisecond', async () => {
+    redis.eval.mockResolvedValue([1, 1, 999, 1])
+    const spy = vi.spyOn(Date, 'now').mockReturnValue(1000)
+    await Promise.all([checkRateLimit('a'), checkRateLimit('a')])
+    expect(redis.eval.mock.calls[0][2][3]).not.toBe(redis.eval.mock.calls[1][2][3])
+    spy.mockRestore()
   })
-
-  it('should reject request when count reaches limit threshold exactly', async () => {
-    mockCount = 5
-    const res = await checkRateLimit('test-ip-3', { limit: 5, windowMs: 60000 })
-    expect(res.allowed).toBe(false)
-    expect(res.remaining).toBe(0)
+  it('fails open with a future reset when Redis fails', async () => {
+    redis.eval.mockRejectedValue(new Error('unavailable'))
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const result = await checkRateLimit('a', { limit: 5, windowMs: 60000 })
+    expect(result.allowed).toBe(true)
+    expect(result.reset).toBeGreaterThan(Date.now() / 1000)
+    log.mockRestore()
   })
-
-  it('should reject request when count is over limit', async () => {
-    mockCount = 12
-    const res = await checkRateLimit('test-ip-4', { limit: 5, windowMs: 60000 })
-    expect(res.allowed).toBe(false)
-    expect(res.remaining).toBe(0)
-  })
-
-  it('should fail open when Redis encounters an operational failure', async () => {
-    shouldThrow = true
-    const res = await checkRateLimit('test-ip-5', { limit: 10, windowMs: 60000 })
-    expect(res.allowed).toBe(true)
-    expect(res.remaining).toBe(10)
-  })
-
-  it('should define standard preset limits', () => {
-    expect(RATE_LIMITS.anonymous.limit).toBe(5)
-    expect(RATE_LIMITS.authenticated.limit).toBe(50)
-    expect(RATE_LIMITS.apiKey.limit).toBe(100)
-    expect(RATE_LIMITS.redirect.limit).toBe(200)
+  it('keeps the advertised creation tiers', () => {
+    expect([RATE_LIMITS.anonymous.limit, RATE_LIMITS.authenticated.limit, RATE_LIMITS.apiKey.limit]).toEqual([5, 50, 100])
   })
 })

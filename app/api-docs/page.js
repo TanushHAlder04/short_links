@@ -120,7 +120,7 @@ export default function ApiDocs() {
         </p>
         <CodeBlock code={`curl -H "Authorization: Bearer sl_your_api_key" ${HOST}/api/links`} />
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <div className="badge badge-green">Rate limit: 100 req/min</div>
+          <div className="badge badge-green">Creation: up to 100 req/min; network ceiling: 300</div>
           <div className="badge badge-purple">Format: JSON</div>
           <div className="badge badge-cyan">Base URL: {HOST}</div>
         </div>
@@ -137,7 +137,10 @@ export default function ApiDocs() {
         params={[
           { name: 'url', type: 'string*', desc: 'The original URL to shorten' },
           { name: 'customAlias', type: 'string?', desc: '3–30 chars, alphanumeric + hyphens' },
-          { name: 'expiresAt', type: 'ISO 8601?', desc: 'Optional expiry datetime' },
+          { name: 'expiresAt', type: 'ISO 8601?', desc: 'Optional future expiry datetime with timezone' },
+          { name: 'iosUrl / androidUrl', type: 'string?', desc: 'HTTP/HTTPS device-specific destinations' },
+          { name: 'webhookUrl', type: 'string?', desc: 'Public HTTPS endpoint on port 443; redirects are rejected' },
+          { name: 'webhookSecret', type: 'string?', desc: 'Optional HMAC-SHA256 signing secret' },
         ]}
         example={`curl -X POST ${HOST}/api/generate \\
   -H "Content-Type: application/json" \\
@@ -149,6 +152,7 @@ export default function ApiDocs() {
         method="GET" path="/api/links"
         desc="List all your shortened links with pagination. Requires authentication."
         params={[
+          { name: 'q', type: 'string?', desc: 'Search all owned links by code or destination' },
           { name: 'page', type: 'number?', desc: 'Page number (default: 1)' },
           { name: 'limit', type: 'number?', desc: 'Results per page, max 50 (default: 20)' },
           { name: 'sortBy', type: 'string?', desc: 'createdAt | clickCount' },
@@ -160,7 +164,7 @@ export default function ApiDocs() {
 
       <Endpoint
         method="GET" path="/api/analytics/:shortCode"
-        desc="Get full analytics for a link: 30-day click timeline, device, browser, country, and referrer breakdowns."
+        desc="Get full analytics for a link: 30 UTC calendar days of clicks, device, browser, country, and referrer breakdowns. Add ?includeBots=true to include detected bots in charts and lifetime totals."
         example={`curl ${HOST}/api/analytics/abc123 \\
   -H "Authorization: Bearer sl_your_api_key"`}
       />

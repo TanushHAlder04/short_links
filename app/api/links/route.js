@@ -43,15 +43,21 @@ export async function GET(request) {
 
     const { searchParams } = new URL(request.url)
 
-    const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10))
-    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') || '20', 10)))
+    const page = Math.max(1, (parseInt(searchParams.get('page') || '1', 10) || 1))
+    const limit = Math.min(50, Math.max(1, (parseInt(searchParams.get('limit') || '20', 10) || 20)))
     const sortBy = safeSortBy(searchParams.get('sortBy') || 'createdAt')
     const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc'
 
-    const [links, total] = await Promise.all([
+    const query = (searchParams.get('q') || '').trim().slice(0, 300)
+    const where = { userId, ...(query ? { OR: [
+      { shortCode: { contains: query, mode: 'insensitive' } },
+      { originalUrl: { contains: query, mode: 'insensitive' } },
+    ] } : {}) }
+    const now = new Date()
+    const [links, total, accountTotal, clicks, active, thisWeek] = await Promise.all([
       prisma.url.findMany({
-        where: { userId },
-        orderBy: { [sortBy]: order },
+        where,
+        orderBy: [{ [sortBy]: order }, { id: order }],
         skip: (page - 1) * limit,
         take: limit,
         select: {
@@ -67,13 +73,16 @@ export async function GET(request) {
         },
       }),
 
-      prisma.url.count({
-        where: { userId },
-      }),
+      prisma.url.count({ where }),
+      prisma.url.count({ where: { userId } }),
+      prisma.click.count({ where: { isBot: false, url: { userId } } }),
+      prisma.url.count({ where: { userId, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
+      prisma.url.count({ where: { userId, createdAt: { gte: new Date(now.getTime() - 7 * 86400000) } } }),
     ])
 
     return Response.json({
       links,
+      stats: { total: accountTotal, clicks, active, thisWeek },
       pagination: {
         page,
         limit,

@@ -53,7 +53,7 @@ export default function LinkAnalytics() {
     setLoading(true)
     fetch(`/api/analytics/${shortCode}?includeBots=${includeBots}`)
       .then(r => r.json())
-      .then(d => { if (d.error) setError(d.error); else setData(d) })
+      .then(d => { if (d.error) setError(d.error); else { setError(''); setData(d) } })
       .catch(() => setError('Failed to load analytics'))
       .finally(() => setLoading(false))
   }, [shortCode, status, includeBots])
@@ -222,7 +222,7 @@ export default function LinkAnalytics() {
 
       {/* Click timeline */}
       <div className="glass-card" style={{ padding: '24px 28px', marginBottom: 24 }}>
-        <h3 style={{ fontWeight: 700, marginBottom: 20 }}>Clicks — Last 30 Days</h3>
+        <h3 style={{ fontWeight: 700, marginBottom: 20 }}>Clicks — Last 30 Days (UTC)</h3>
         <div style={{ height: 220 }}>
           <Line data={lineData} options={{ ...chartDefaults, plugins: { ...chartDefaults.plugins, legend: { display: false } } }} />
         </div>
@@ -289,7 +289,7 @@ export default function LinkAnalytics() {
                         <div style={{ height: 6, borderRadius: 3, background: 'var(--bg-card)', width: 100, overflow: 'hidden' }}>
                           <div style={{ height: '100%', background: 'var(--gradient-purple)', width: `${(r.count / data.topReferrers[0].count) * 100}%`, borderRadius: 3 }} />
                         </div>
-                        <span style={{ fontSize: '0.8rem' }}>{((r.count / data.totalClicks) * 100).toFixed(1)}%</span>
+                        <span style={{ fontSize: '0.8rem' }}>{((r.count / (data.windowClicks || 1)) * 100).toFixed(1)}%</span>
                       </div>
                     </td>
                   </tr>

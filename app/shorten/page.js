@@ -18,6 +18,7 @@ export default function Shorten() {
   const [iosUrl, setIosUrl] = useState('')
   const [androidUrl, setAndroidUrl] = useState('')
   const [webhookUrl, setWebhookUrl] = useState('')
+  const [webhookSecret, setWebhookSecret] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
 
   const handleGenerate = async () => {
@@ -35,10 +36,11 @@ export default function Shorten() {
         body: JSON.stringify({
           url: url.trim(),
           customAlias: mode === 'custom' ? customAlias.trim() : undefined,
-          expiresAt: expiresAt || undefined,
+          expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
           iosUrl: iosUrl.trim() || undefined,
           androidUrl: androidUrl.trim() || undefined,
           webhookUrl: webhookUrl.trim() || undefined,
+          webhookSecret: webhookSecret || undefined,
         }),
       })
       const data = await res.json()
@@ -75,12 +77,13 @@ export default function Shorten() {
     setIosUrl('')
     setAndroidUrl('')
     setWebhookUrl('')
+    setWebhookSecret('')
     setError('')
   }
 
   const minDate = new Date()
   minDate.setMinutes(minDate.getMinutes() + 5)
-  const minDateStr = minDate.toISOString().slice(0, 16)
+  const minDateStr = new Date(minDate.getTime() - minDate.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 
   return (
     <main style={{ padding: '120px 24px 60px', minHeight: '80vh', display: 'flex', alignItems: 'flex-start', justifyContent: 'center' }}>
@@ -192,6 +195,8 @@ export default function Shorten() {
                   <div>
                     <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>Click Milestone Webhook URL (optional)</label>
                     <input type="url" className="input-field" placeholder="https://your-api.com/webhooks/clicks" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} style={{ fontSize: '0.85rem' }} />
+                    <label htmlFor="webhook-secret" style={{ display: 'block', marginTop: 12 }}>Signing secret (optional)</label>
+                    <input id="webhook-secret" type="password" autoComplete="new-password" className="input-field" value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)} />
                   </div>
                 </div>
               )}

@@ -2,12 +2,18 @@
 
 import { signIn, useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { authErrorMessage } from '@/lib/auth-errors'
 import { Github, Globe, Link as LinkIcon, BarChart3, Shield } from 'lucide-react'
 
 export default function Login() {
   const { data: session, status } = useSession()
   const router = useRouter()
+  const [authError, setAuthError] = useState('')
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAuthError(authErrorMessage(new URLSearchParams(window.location.search).get('error')))
+  }, [])
 
   useEffect(() => {
     if (status === 'authenticated') router.push('/dashboard')
@@ -45,6 +51,8 @@ export default function Login() {
               </div>
             ))}
           </div>
+
+          {authError && <p role="alert" style={{ color: "#fca5a5", marginBottom: 16 }}>{authError}</p>}
 
           {/* OAuth buttons */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

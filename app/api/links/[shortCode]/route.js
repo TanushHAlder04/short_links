@@ -7,6 +7,7 @@ import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { prisma } from '@/lib/prisma'
 import { cacheDel } from '@/lib/redis'
 import { getAuthUserId } from '@/lib/apikeys'
+import { validateLinkOptions, ValidationError } from '@/lib/link-validation'
 
 async function getShortCode(params) {
   const resolvedParams = await params
@@ -55,11 +56,11 @@ export async function GET(request, { params }) {
 
     const [totalClicks, recentClicks] = await Promise.all([
       prisma.click.count({
-        where: { shortCode },
+        where: { shortCode, isBot: false },
       }),
 
       prisma.click.findMany({
-        where: { shortCode },
+        where: { shortCode, isBot: false },
         orderBy: { timestamp: 'desc' },
         take: 10,
         select: {
@@ -109,32 +110,8 @@ export async function PATCH(request, { params }) {
       return Response.json({ error }, { status })
     }
 
-    const body = await request.json()
-    const updates = {}
-
-    if (typeof body.isActive === 'boolean') {
-      updates.isActive = body.isActive
-    }
-
-    if (body.expiresAt !== undefined) {
-      updates.expiresAt = body.expiresAt ? new Date(body.expiresAt) : null
-    }
-
-    if (body.iosUrl !== undefined) {
-      updates.iosUrl = body.iosUrl ? body.iosUrl.trim() : null
-    }
-
-    if (body.androidUrl !== undefined) {
-      updates.androidUrl = body.androidUrl ? body.androidUrl.trim() : null
-    }
-
-    if (body.webhookUrl !== undefined) {
-      updates.webhookUrl = body.webhookUrl ? body.webhookUrl.trim() : null
-    }
-
-    if (body.webhookSecret !== undefined) {
-      updates.webhookSecret = body.webhookSecret ? body.webhookSecret.trim() : null
-    }
+    const body = await request.json().catch(() => { throw new ValidationError('Invalid JSON') })
+    const updates = await validateLinkOptions(body)
 
     if (Object.keys(updates).length === 0) {
       return Response.json(
@@ -155,6 +132,7 @@ export async function PATCH(request, { params }) {
       url: updated,
     })
   } catch (error) {
+    if (error instanceof ValidationError) return Response.json({ error: error.message }, { status: 400 })
     console.error('PATCH /api/links/[shortCode] error:', error)
 
     return Response.json(

@@ -11,14 +11,14 @@ A full-stack URL shortening platform built with **Next.js 16 (App Router)**, **P
 
 | Feature | Description |
 |---------|-------------|
-| 🔗 **URL Shortening** | Auto-generated 7-character base62 codes or custom aliases |
+| 🔗 **URL Shortening** | Auto-generated 7-character ambiguity-reduced random codes or custom aliases |
 | 🔀 **Smart Device Redirects** | Route iOS, Android, and desktop users to platform-specific destination URLs |
 | 📁 **Bulk CSV Import & Export** | Batch import up to 100 links at once with error reporting, failed-row retries, and sanitized CSV exports |
 | 🤖 **Bot & Crawler Filtering** | Automatically flag search engine and social preview bots, excluding them from headline click totals with a toggleable view |
 | 🔔 **Milestone Webhooks** | Dispatch HMAC-SHA256 signed HTTP POST webhooks to custom endpoints upon reaching click thresholds |
 | ⚡ **Redis Caching** | Low-latency, cache-first redirect lookups via Upstash Redis with dynamic TTLs |
 | 🌸 **Bloom Filter Gatekeeper** | Dual in-memory FNV-1a Bloom filters: uniqueness checking to avoid database collisions, and cache gatekeeping to prevent single-hit cache pollution |
-| 🛡️ **Sliding-Window Rate Limiting** | Tiered Redis sorted-set rate limiting across Edge proxy, redirect routes, and API endpoints |
+| 🛡️ **Sliding-Window Rate Limiting** | Tiered Redis sorted-set rate limiting across Node.js proxy, redirect routes, and API endpoints |
 | 📊 **Detailed Analytics** | Track clicks over 30 days with breakdown by device, browser, operating system, country, and referrers |
 | 🔑 **API Key System** | SHA-256 hashed API keys for programmatic link generation and automation |
 | 📱 **QR Code Generation** | Instant QR codes generated for every shortened link, downloadable as PNG |
@@ -50,12 +50,12 @@ Client / Browser
   │     │
   │     └─► Background Tasks via Next.js after()
   │           ├─ Record click event (device, browser, OS, geo, isBot flag)
-  │           ├─ Increment global click stats
+  │           ├─ Commit click event and human counter together
   │           └─ If milestone reached (e.g. 10th click) ──► Dispatch HMAC-signed Webhook
   │
   ├─► /api/* (API Routes)
   │     │
-  │     ├─► Edge Proxy Middleware (proxy.js — REST Rate Limiting)
+  │     ├─► Node.js Proxy (proxy.js — REST Rate Limiting)
   │     │
   │     ├─► POST /api/generate
   │     │     └─ Rate Limit Check ──► Optimistic Bloom Filter ──► DB Insert ──► Warm Cache
@@ -86,7 +86,7 @@ Client / Browser
 | **Visualizations** | Chart.js & `react-chartjs-2` | Interactive analytics charts |
 | **Utilities** | `nanoid`, `qrcode`, `ua-parser-js` | Base62 ID generation, QR codes, User-Agent parsing |
 | **Styling** | Vanilla CSS + Design Tokens | Custom CSS variables and responsive glassmorphism |
-| **Deployment** | Vercel | Serverless hosting with Edge proxy execution |
+| **Deployment** | Vercel | Serverless hosting with Node.js proxy execution |
 
 ---
 
@@ -171,7 +171,7 @@ model ApiKey {
 
 ## 🛡️ Rate Limiting Tiers
 
-Rate limiting is enforced using a sliding-window sorted-set algorithm (`lib/ratelimit.js`) and Edge proxy (`proxy.js`):
+Rate limiting is enforced using a sliding-window sorted-set algorithm (`lib/ratelimit.js`) and Node.js proxy (`proxy.js`):
 
 | Scope | Target Identifier | Limit | Window | Action on Exceeded |
 |-------|-------------------|-------|--------|---------------------|
@@ -189,13 +189,13 @@ Rate limiting is enforced using a sliding-window sorted-set algorithm (`lib/rate
 
 ## 🔑 API Key System
 
-Developers can authenticate programmatically using API keys via the `Authorization` header (`Authorization: Bearer sk-...` or `Authorization: sk-...`):
+Developers can authenticate programmatically using API keys via the `Authorization` header (`Authorization: Bearer sl_...`):
 
 ```bash
 # Create a short link with device redirects via API key
 curl -X POST https://short-links-mlku.vercel.app/api/generate \
   -H "Content-Type: application/json" \
-  -H "Authorization: sk-your-api-key-here" \
+  -H "Authorization: Bearer sl_your_api_key_here" \
   -d '{
     "url": "https://example.com/long-page",
     "customAlias": "my-campaign",
@@ -204,7 +204,7 @@ curl -X POST https://short-links-mlku.vercel.app/api/generate \
   }'
 ```
 
-- Keys are generated as `sk-` prefixed high-entropy tokens and stored solely as **SHA-256** hashes.
+- Keys are generated as `sl_` prefixed high-entropy tokens and stored solely as **SHA-256** hashes.
 - Plaintext keys are presented **exactly once** upon creation in the UI.
 - Up to **5 active keys** per user account.
 - `lastUsed` timestamp is updated asynchronously on every authenticated request without adding latency to the response.
@@ -233,18 +233,18 @@ Each link click records a detailed event asynchronously in the background via Ne
 
 ## 🔒 Security Architecture
 
-- **Resource Ownership Verification**: Every link mutation (`GET`, `PATCH`, `DELETE`) enforces strict user ownership checks (`verifyOwnership()`) to prevent unauthorized cross-tenant modifications.
+- **Resource Ownership Verification**: Every link mutation (`GET`, `PATCH`, `DELETE`) enforces user ownership checks to prevent unauthorized cross-tenant modifications.
 - **Prisma Parameterized Queries**: All database queries are executed via Prisma ORM parameterized statements, eliminating raw SQL injection vulnerabilities.
 - **Content Security Policy & Security Headers**: Enforced via `next.config.mjs` with `Strict-Transport-Security` (HSTS), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and restricted `connect-src` / `form-action` origins.
 - **CSV Formula Injection Sanitization**: All exported CSV cell values starting with formula-triggering characters (`=`, `+`, `-`, `@`, `\t`, `\r`) are automatically neutralized with single quotes (`'`) in `lib/csv.js`.
-- **HMAC-SHA256 Webhook Verification**: Outgoing webhook milestone payloads include an `X-ShortLinks-Signature` header computed as `sha256=<hex_hmac>` using the link's configured `webhookSecret`:
+- **HMAC-SHA256 Webhook Verification**: Outgoing webhook milestone payloads include an `X-ShortLinks-Signature` header computed as `sha256=<hex_hmac>` when the link has a configured `webhookSecret` (unsigned otherwise):
   ```javascript
   // Consumer verification example:
   const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
   const isValid = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
   ```
 - **IP Anonymization**: IP addresses are hashed using SHA-256 with a secret salt (`IP_HASH_SALT`) before persistence; raw client IPs are never written to the database.
-- **API Key Security**: API keys are generated with high entropy (`sk-...`) and stored solely as SHA-256 hashes (`keyHash`). Plaintext keys are presented once upon creation.
+- **API Key Security**: API keys are generated with high entropy (`sl_...`) and stored solely as SHA-256 hashes (`keyHash`). Plaintext keys are presented once upon creation.
 - **URL Scheme Restriction**: Enforces strict `http:` and `https:` validation (`lib/shortcode.js`), rejecting `javascript:`, `data:`, or `file:` URIs.
 
 ---
@@ -253,7 +253,7 @@ Each link click records a detailed event asynchronously in the background via Ne
 
 ### Automated Test Suite (`Vitest`)
 
-The repository includes **32 unit and integration tests across 8 test suites**:
+The repository includes utility and mocked route regression tests. Run `npm test` for the current count:
 
 | Test Suite | File | Focus Area |
 |------------|------|------------|
@@ -314,11 +314,11 @@ npm install
 
 ### 2. Configure Environment
 
-Copy the example environment file:
+Copy the example environment file (Prisma CLI reads `.env`):
 ```bash
-cp .env.example .env.local
+cp .env.example .env
 ```
-Fill in the database connection strings, OAuth credentials, and Upstash Redis secrets in `.env.local` (see [`.env.example`](.env.example) for documentation).
+Fill in the database connection strings, OAuth credentials, and Upstash Redis secrets in `.env` (see [`.env.example`](.env.example) for documentation).
 
 ### 3. Deploy Database Migrations
 
@@ -413,7 +413,7 @@ short_links/
 ├── .gitignore                   # Git exclusion rules
 ├── next.config.mjs              # Security headers, CSP, and Next.js settings
 ├── package.json                 # Project scripts and dependencies
-├── proxy.js                     # Next.js 16 Edge proxy rate limiter
+├── proxy.js                     # Next.js 16 Node.js proxy rate limiter
 └── vitest.config.mjs            # Vitest test runner configuration
 ```
 
@@ -431,3 +431,42 @@ MIT License. Free for personal and commercial use.
 - Email: [tanushhalder.2004@gmail.com](mailto:tanushhalder.2004@gmail.com)
 
 ---
+
+
+## Reliability and metric semantics
+
+- Redirects return HTTP 410 with an HTML explanation for inactive/expired links. Missing links return 404.
+- `after()` awaits click recording. Click insertion and human-counter increment share one database transaction; milestone webhook delivery is awaited after commit. This is best-effort processing, not a durable queue: process failure can still lose events, and webhooks have no retry guarantee.
+- The dashboard summary covers the entire signed-in account. `GET /api/links?q=term` searches all owned links before pagination. Status sorting remains explicitly local to the displayed page, with pagination available.
+- Public totals come from PostgreSQL (CDN cache up to 60 seconds, stale revalidation up to 300 seconds). Bulk imports are included automatically; old Redis counters are ignored.
+- Click totals exclude detected bots by default. `includeBots=true` changes both the lifetime analytics total and its charts. Charts use 30 UTC calendar days including today. Referrer percentages use that same window, not the lifetime total.
+- Local Bloom filters are hints per process; database uniqueness and up to five insert attempts handle collisions. Cache invalidation remains best-effort during Redis outages.
+- Link creation and updates share URL/type/expiry validation. Webhooks require public HTTPS destinations on port 443, without URL credentials. DNS is checked at save and send time, delivery pins the checked IP, and redirects are rejected. Configure `webhookSecret` for HMAC signatures; signing is optional.
+- Creation tiers remain 5 anonymous / 50 session / 100 API-key requests per minute. A separate 300 requests/minute/network ceiling protects all non-auth API routes. Redis Lua atomically checks and records accepted requests; rejected requests do not consume additional slots. Redis outages fail open.
+- CI runs client generation, lint, tests, and a production build. Tests mock hosted services; passing CI does not establish live OAuth, database, Redis, or throughput health.
+
+## Production OAuth and font troubleshooting
+
+Set production `NEXTAUTH_URL` and `NEXT_PUBLIC_HOST` to `https://short-links-mlku.vercel.app` (no trailing slash), and configure a stable `NEXTAUTH_SECRET` and `IP_HASH_SALT`. Redeploy after environment changes.
+
+Register these callbacks in the exact OAuth applications whose IDs are configured in Vercel:
+
+- Google: `https://short-links-mlku.vercel.app/api/auth/callback/google`
+- GitHub: `https://short-links-mlku.vercel.app/api/auth/callback/github`
+
+A Google `redirect_uri_mismatch` is fixed in the provider console. A NextAuth `error=Callback` is a separate server-side failure: check Vercel logs for `[auth]` diagnostic codes, database connectivity/migrations, and the matching client ID/secret. Do not enable automatic email-based account linking as a workaround.
+
+Inter is loaded through `next/font/google` and applied with `--font-inter`; the browser does not need a Google Fonts stylesheet. The CSP continues to allow only self-hosted fonts/styles (plus existing inline styles).
+
+
+### Database errors during OAuth callbacks
+
+NextAuth's Prisma adapter needs database access to persist users, provider accounts, and sessions. Both Google and GitHub can therefore fail at the callback stage when `DATABASE_URL` is incorrect.
+
+For `Tenant or user not found`, copy the complete **Transaction pooler** URI from your Supabase project's **Connect** dialog into Vercel's **Production DATABASE_URL**. Shared-pooler usernames use `postgres.PROJECT_REF`; the exact regional pooler hostname must belong to that same project. Use the database password (URL-encoded), not a Supabase API key. Do not guess the region or pooler host prefix.
+
+`DIRECT_URL` is read by Prisma CLI for migrations; changing it alone does not fix runtime login. Use a direct connection or the Session pooler URI for migrations. A literal DNS `ENOTFOUND` additionally requires checking the hostname and project availability.
+
+Run `npm run db:check` in the environment being diagnosed for a read-only connection/auth-table check. It prints no credentials. Local success does not validate Vercel's separately configured production variables. Redeploy after correcting production variables.
+
+Reference: https://supabase.com/docs/guides/troubleshooting/tenant-or-user-not-found

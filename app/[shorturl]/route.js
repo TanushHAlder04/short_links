@@ -1,9 +1,8 @@
 // URL redirect handler with Redis caching and async analytics.
-// Performance path: Redis hit → <5ms redirect. DB miss → ~50ms.
+// Latency depends on Redis/database placement and network latency.
 
 import { redirect , notFound } from 'next/navigation'
 import { NextResponse, after } from 'next/server'
-import { incrStat } from '@/lib/redis'
 import { recordClick } from '@/lib/analytics'
 import { fetchCachedUrl } from '@/lib/cache-gatekeeper'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/ratelimit'
@@ -50,10 +49,12 @@ export async function GET(request, { params }) {
   }
 
   //  Validate Link Status and Expiration
-const isExpired = urlData.expiresAt && new Date(urlData.expiresAt) < new Date()
+const isExpired = urlData.expiresAt && new Date(urlData.expiresAt) <= new Date()
   if (!urlData.isActive || isExpired) {
     const reason = !urlData.isActive ? 'inactive' : 'expired'
-    redirect(`/link-unavailable?reason=${reason}`)
+    return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Link unavailable</title></head><body><main><h1>Link unavailable</h1><p>This link is ${reason}.</p><a href="/">Go home</a></main></body></html>`, {
+      status: 410, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' },
+    })
   }
 //User-Agent Targetted Device Routing
   const userAgent = request.headers.get('user-agent') || ''
@@ -61,16 +62,7 @@ const isExpired = urlData.expiresAt && new Date(urlData.expiresAt) < new Date()
   const targetUrl = resolveTargetUrl(urlData, userAgent)
 
   //  Safe Background Analytics Execution
-  after(async () => {
-    try {
-      await Promise.allSettled([
-        recordClick({ shortCode: shorturl, ip, userAgent, referrer }),
-        incrStat('total_clicks')
-      ])
-    } catch (err) {
-      console.error('Failed to log analytics:', err)
-    }
-  })
+  after(() => recordClick({ shortCode: shorturl, ip, userAgent, referrer }))
 
   // Perform Redirect
   redirect(targetUrl)

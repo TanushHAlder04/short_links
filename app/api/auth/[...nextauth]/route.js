@@ -10,6 +10,16 @@ import { prisma } from '@/lib/prisma'
 
 export const authOptions = {
   adapter: PrismaAdapter(prisma),
+  // Log diagnostic codes without OAuth tokens, profiles, URLs, or secrets.
+  logger: {
+    error(code, metadata) {
+      console.error('[auth]', JSON.stringify({
+        code,
+        errorName: metadata?.error?.name || metadata?.name,
+        causeCode: metadata?.error?.code || metadata?.code,
+      }))
+    },
+  },
 
   providers: [
     GitHubProvider({

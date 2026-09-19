@@ -1,37 +1,49 @@
-import { describe, it, expect } from 'vitest'
-
-describe('Smart Redirect Device Detection', () => {
-  const resolveTarget = (userAgent, urlData) => {
-    let targetUrl = urlData.originalUrl
-    if (userAgent) {
-      const ua = userAgent.toLowerCase()
-      if ((ua.includes('iphone') || ua.includes('ipad') || ua.includes('ipod') || ua.includes('ios')) && urlData.iosUrl) {
-        targetUrl = urlData.iosUrl
-      } else if (ua.includes('android') && urlData.androidUrl) {
-        targetUrl = urlData.androidUrl
-      }
-    }
-    return targetUrl
-  }
-
-  const link = {
-    originalUrl: 'https://example.com/fallback',
-    iosUrl: 'https://apps.apple.com/app/id123456789',
-    androidUrl: 'https://play.google.com/store/apps/details?id=com.example.app',
-  }
-
-  it('should redirect iPhone User-Agent to iosUrl', () => {
-    const iphoneUA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15'
-    expect(resolveTarget(iphoneUA, link)).toBe(link.iosUrl)
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+vi.mock('next/navigation', () => ({
+  redirect: vi.fn((url) => { throw new Error(`REDIRECT:${url}`) }),
+  notFound: vi.fn(() => { throw new Error('NOT_FOUND') }),
+}))
+vi.mock('next/server', () => ({ after: vi.fn(), NextResponse: { json: Response.json } }))
+vi.mock('../lib/cache-gatekeeper', () => ({ fetchCachedUrl: vi.fn() }))
+vi.mock('../lib/analytics', () => ({ recordClick: vi.fn() }))
+vi.mock('../lib/ratelimit', () => ({ checkRateLimit: vi.fn(), RATE_LIMITS: { redirect: { limit: 200, windowMs: 60000 } } }))
+import { GET } from '../app/[shorturl]/route'
+import { after } from 'next/server'
+import { fetchCachedUrl } from '../lib/cache-gatekeeper'
+import { recordClick } from '../lib/analytics'
+import { checkRateLimit } from '../lib/ratelimit'
+const link = { originalUrl: 'https://example.com', iosUrl: 'https://apple.com', androidUrl: 'https://android.com', isActive: true }
+const call = (ua = '') => GET(new Request('https://short.test/abc', { headers: { 'user-agent': ua } }), { params: Promise.resolve({ shorturl: 'abc' }) })
+beforeEach(() => { vi.clearAllMocks(); fetchCachedUrl.mockResolvedValue(link); checkRateLimit.mockResolvedValue({ allowed: true }) })
+describe('Actual redirect route', () => {
+  it.each([['iPhone', link.iosUrl], ['Android', link.androidUrl], ['Chrome', link.originalUrl], ['', link.originalUrl]])('routes %s', async (ua, target) => {
+    await expect(call(ua)).rejects.toThrow(`REDIRECT:${target}`)
   })
-
-  it('should redirect Android User-Agent to androidUrl', () => {
-    const androidUA = 'Mozilla/5.0 (Linux; Android 13; SM-S901B) AppleWebKit/537.36 Mobile Safari/537.36'
-    expect(resolveTarget(androidUA, link)).toBe(link.androidUrl)
+  it('falls back when a device override is missing', async () => {
+    fetchCachedUrl.mockResolvedValue({ ...link, iosUrl: null })
+    await expect(call('iPhone')).rejects.toThrow(`REDIRECT:${link.originalUrl}`)
   })
-
-  it('should fall back to originalUrl for desktop or unconfigured platform', () => {
-    const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0'
-    expect(resolveTarget(desktopUA, link)).toBe(link.originalUrl)
+  it.each([{ ...link, isActive: false }, { ...link, expiresAt: '2020-01-01' }])('returns 410 without recording unavailable links', async (data) => {
+    fetchCachedUrl.mockResolvedValue(data)
+    const res = await call()
+    expect(res.status).toBe(410)
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(await res.text()).toContain('Link unavailable')
+    expect(after).not.toHaveBeenCalled()
+  })
+  it('returns not found for missing links', async () => {
+    fetchCachedUrl.mockResolvedValue(null)
+    await expect(call()).rejects.toThrow('NOT_FOUND')
+  })
+  it('passes an awaitable analytics task to after()', async () => {
+    const pending = new Promise(() => {})
+    recordClick.mockReturnValue(pending)
+    await expect(call()).rejects.toThrow('REDIRECT:')
+    expect(after.mock.calls[0][0]()).toBe(pending)
+  })
+  it('rejects rate-limited visits before looking up the link', async () => {
+    checkRateLimit.mockResolvedValue({ allowed: false, reset: 123 })
+    expect((await call()).status).toBe(429)
+    expect(fetchCachedUrl).not.toHaveBeenCalled()
   })
 })

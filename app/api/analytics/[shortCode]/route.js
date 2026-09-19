@@ -21,7 +21,7 @@ export async function GET(request, { params }) {
   // ── Verify ownership ───────────────────────────────────────────────────────
   const urlRecord = await prisma.url.findUnique({
     where: { shortCode },
-    select: { id: true, userId: true, shortCode: true, originalUrl: true, iosUrl: true, androidUrl: true, webhookUrl: true, webhookSecret: true, clickCount: true, createdAt: true, isActive: true, expiresAt: true },
+    select: { id: true, userId: true, shortCode: true, originalUrl: true, iosUrl: true, androidUrl: true, webhookUrl: true, clickCount: true, createdAt: true, isActive: true, expiresAt: true },
   })
 
   if (!urlRecord) {
@@ -38,13 +38,16 @@ export async function GET(request, { params }) {
 
   // ── Clicks over last 30 days ───────────────────────────────────────────────
   const thirtyDaysAgo = new Date()
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  thirtyDaysAgo.setUTCHours(0, 0, 0, 0)
+  thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29)
 
-  const whereClause = { shortCode, timestamp: { gte: thirtyDaysAgo } }
+  const windowEnd = new Date(thirtyDaysAgo.getTime() + 30 * 86400000)
+  const whereClause = { shortCode, timestamp: { gte: thirtyDaysAgo, lt: windowEnd } }
   if (!includeBots) {
     whereClause.isBot = false
   }
 
+  const totalClicks = await prisma.click.count({ where: { shortCode, ...(includeBots ? {} : { isBot: false }) } })
   const clicks = await prisma.click.findMany({
     where: whereClause,
     select: { timestamp: true, device: true, browser: true, country: true, referrer: true, isBot: true },
@@ -53,8 +56,7 @@ export async function GET(request, { params }) {
   // Group clicks by day
   const clicksByDay = {}
   for (let i = 29; i >= 0; i--) {
-    const d = new Date()
-    d.setDate(d.getDate() - i)
+    const d = new Date(thirtyDaysAgo.getTime() + (29 - i) * 86400000)
     const key = d.toISOString().split('T')[0]
     clicksByDay[key] = 0
   }
@@ -64,28 +66,28 @@ export async function GET(request, { params }) {
   })
 
   // Group by device
-  const deviceMap = {}
+  const deviceMap = Object.create(null)
   clicks.forEach((c) => {
     const k = c.device || 'Unknown'
     deviceMap[k] = (deviceMap[k] || 0) + 1
   })
 
   // Group by browser
-  const browserMap = {}
+  const browserMap = Object.create(null)
   clicks.forEach((c) => {
     const k = c.browser || 'Unknown'
     browserMap[k] = (browserMap[k] || 0) + 1
   })
 
   // Group by country
-  const countryMap = {}
+  const countryMap = Object.create(null)
   clicks.forEach((c) => {
     const k = c.country || 'Unknown'
     countryMap[k] = (countryMap[k] || 0) + 1
   })
 
   // Group by referrer
-  const referrerMap = {}
+  const referrerMap = Object.create(null)
   clicks.forEach((c) => {
     const k = c.referrer || 'Direct'
     // Normalize referrer to domain
@@ -100,7 +102,10 @@ export async function GET(request, { params }) {
 
   return Response.json({
     url: urlRecord,
-    totalClicks: urlRecord.clickCount,
+    totalClicks,
+    windowClicks: clicks.length,
+    includeBots,
+    timezone: 'UTC',
     clicksByDay: Object.entries(clicksByDay).map(([date, count]) => ({ date, count })),
     byDevice: Object.entries(deviceMap).map(([name, count]) => ({ name, count })),
     byBrowser: Object.entries(browserMap).sort(([,a],[,b]) => b-a).slice(0, 8).map(([name, count]) => ({ name, count })),

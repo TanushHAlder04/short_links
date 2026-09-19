@@ -100,6 +100,11 @@ export async function POST(request) {
     // Process rows sequentially to maintain Bloom filter & rate limit stability
     for (let index = 0; index < rawRows.length; index++) {
       const row = rawRows[index]
+      if (!row || typeof row !== 'object' || Array.isArray(row) || ['originalurl', 'url', 'originalUrl', 'customalias', 'alias', 'customAlias', 'iosurl', 'iosUrl', 'androidurl', 'androidUrl'].some((key) => row[key] != null && typeof row[key] !== 'string')) {
+        failed++
+        results.push({ row: index + 1, status: 'failed', error: 'Row values must be strings', input: row })
+        continue
+      }
       const originalUrl = row.originalurl || row.url || row.originalUrl
       const customAlias = (row.customalias || row.alias || row.customAlias || '').trim()
       const iosUrl = (row.iosurl || row.iosUrl || '').trim()
@@ -107,19 +112,19 @@ export async function POST(request) {
 
       if (!originalUrl || !isValidUrl(originalUrl)) {
         failed++
-        results.push({ row: index + 1, originalUrl, status: 'failed', error: 'Invalid or missing HTTP/HTTPS URL' })
+        results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: 'Invalid or missing HTTP/HTTPS URL' })
         continue
       }
 
       if (iosUrl && !isValidUrl(iosUrl)) {
         failed++
-        results.push({ row: index + 1, originalUrl, status: 'failed', error: 'Invalid iOS URL' })
+        results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: 'Invalid iOS URL' })
         continue
       }
 
       if (androidUrl && !isValidUrl(androidUrl)) {
         failed++
-        results.push({ row: index + 1, originalUrl, status: 'failed', error: 'Invalid Android URL' })
+        results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: 'Invalid Android URL' })
         continue
       }
 
@@ -144,14 +149,14 @@ export async function POST(request) {
           const val = validateAlias(customAlias)
           if (!val.valid) {
             failed++
-            results.push({ row: index + 1, originalUrl, status: 'failed', error: val.error })
+            results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: val.error })
             continue
           }
 
           const existing = await prisma.url.findUnique({ where: { shortCode: customAlias } })
           if (existing) {
             failed++
-            results.push({ row: index + 1, originalUrl, status: 'failed', error: 'Custom alias is already taken' })
+            results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: 'Custom alias is already taken' })
             continue
           }
 
@@ -179,10 +184,10 @@ export async function POST(request) {
         })
 
         imported++
-        results.push({ row: index + 1, originalUrl, shortCode, status: 'success' })
+        results.push({ row: index + 1, input: row, originalUrl, shortCode, status: 'success' })
       } catch (err) {
         failed++
-        results.push({ row: index + 1, originalUrl, status: 'failed', error: err.message || 'Database creation error' })
+        results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: err.code === 'P2002' ? 'Custom alias is already taken' : 'Could not create link' })
       }
     }
 
