@@ -44,3 +44,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+.test-data/
+coverage/
+playwright-report/
+test-results/
+reports/

@@ -1,30 +1,39 @@
-# ShortLinks — Modern URL Shortener & Link Analytics
+<div align="center">
 
-A full-stack URL shortening platform built with **Next.js 16 (App Router)**, **PostgreSQL (Supabase)**, **Upstash Redis**, and **NextAuth.js**. Designed for fast redirects, comprehensive analytics, and developer integrations.
+# 🔗 ShortLinks
+
+**Modern URL Shortener with a Link Analytics Dashboard**
+
+</div>
+
+
+A full-stack URL shortening platform built with Next.js 16 (App Router), PostgreSQL (Supabase), Upstash Redis, and NextAuth.js. Designed for fast redirects, comprehensive analytics, and developer integrations.
+
 
 > 🚀 **Live:** [https://short-links-mlku.vercel.app/](https://short-links-mlku.vercel.app/)  
-> 📂 **GitHub:** [TanushHAlder04/short_links](https://github.com/TanushHAlder04/short_links)
+
+
 
 ---
 
 ## ✨ Features
 
-| Feature | Description |
-|---------|-------------|
-| 🔗 **URL Shortening** | Auto-generated 7-character ambiguity-reduced random codes or custom aliases |
-| 🔀 **Smart Device Redirects** | Route iOS, Android, and desktop users to platform-specific destination URLs |
-| 📁 **Bulk CSV Import & Export** | Batch import up to 100 links at once with error reporting, failed-row retries, and sanitized CSV exports |
-| 🤖 **Bot & Crawler Filtering** | Automatically flag search engine and social preview bots, excluding them from headline click totals with a toggleable view |
-| 🔔 **Milestone Webhooks** | Dispatch HMAC-SHA256 signed HTTP POST webhooks to custom endpoints upon reaching click thresholds |
-| ⚡ **Redis Caching** | Low-latency, cache-first redirect lookups via Upstash Redis with dynamic TTLs |
-| 🌸 **Bloom Filter Gatekeeper** | Dual in-memory FNV-1a Bloom filters: uniqueness checking to avoid database collisions, and cache gatekeeping to prevent single-hit cache pollution |
-| 🛡️ **Sliding-Window Rate Limiting** | Tiered Redis sorted-set rate limiting across Node.js proxy, redirect routes, and API endpoints |
-| 📊 **Detailed Analytics** | Track clicks over 30 days with breakdown by device, browser, operating system, country, and referrers |
-| 🔑 **API Key System** | SHA-256 hashed API keys for programmatic link generation and automation |
-| 📱 **QR Code Generation** | Instant QR codes generated for every shortened link, downloadable as PNG |
-| ⏰ **Link Expiration** | Configurable expiry timestamps returning HTTP 410 Gone after expiration |
-| 🔒 **Security Hardening** | Content Security Policy, strict HTTP security headers, CSV injection sanitization, and salted IP hashing |
-| 🌙 **Modern Glassmorphic UI** | Responsive dark interface with live chart visualizations and accessible motion |
+| | Feature | Description |
+|---|---------|-------------|
+| 🔗 | **URL Shortening** | New codes are 8 cryptographically random NanoID characters from an ambiguity-reduced alphabet. Custom case-sensitive aliases are supported, and existing 7-character links keep working. Unique INSERT with up to 5 collision retries; alias conflicts return `409`. |
+| 🔐 | **Authentication** | Anonymous shortening works out of the box. Google/GitHub OAuth creates an account on first sign-in and uses database sessions. No passwords, no JWT access/refresh-token system. |
+| 🔁 | **Idempotent Creation** | Authenticated `Idempotency-Key` replay for 24 hours, scoped to user/API-key identity. Same key with a different payload returns `409`. |
+| ⚡ | **Redis Cache-Aside** | 24-hour maximum TTL with downward jitter, expiry-bounded TTLs, 45-second negative cache, versioned invalidation and Inngest retries. No local cache, no Bloom filters. |
+| 🔀 | **Smart Device Redirects** | Separate iOS, Android and desktop destinations. Redirects return explicit `302` / `404` / `410` / `503`. |
+| 🪦 | **Tombstone Deletion** | Deleted links return `410` and their codes can never be reassigned. |
+| 📊 | **Privacy-Safe Analytics** | Events are published from `after()` to Inngest. Unique event IDs give transactional, effectively-once counting. Human / bot / all filters sit on permanent lifetime, daily and dimensional aggregates. |
+| 📤 | **Analytics Export** | Sanitized CSV (links, daily, dimensions, raw events) and shareable PDF reports with summary metrics, vector charts and traffic breakdowns. |
+| 🔔 | **Signed Webhooks** | SSRF-protected, signed delivery every ten human clicks. Persistent delivery status, five attempts with exponential delays, owner-only manual retry. |
+| 📁 | **Bulk CSV Import / Export** | Import up to 100 rows with partial success and failed-row retry. Formula-safe, owner-only CSV export. |
+| 🔑 | **API Keys** | SHA-256 hashed keys (`sl_` prefix, `Bearer` auth) for programmatic link creation. |
+| 📱 | **QR Codes** | PNGs generated on demand for active, unexpired public links. |
+| 🛡️ | **Tiered Rate Limiting** | Redis-backed quotas per IP, user and API key. |
+| 🌙 | **Glassmorphic UI** | Responsive dark interface with chart-based analytics dashboard. |
 
 ---
 
@@ -33,41 +42,43 @@ A full-stack URL shortening platform built with **Next.js 16 (App Router)**, **P
 ```
 Client / Browser
   │
-  ├─► GET /[shorturl] (Redirect Path)
+  ├─► GET /[shorturl]  (Redirect Path)
   │     │
-  │     ├─► Route-Level Rate Limiter (200 req/min)
+  │     ├─► Redis cache-aside lookup (versioned key)
+  │     │     ├─ Hit            ──► cached destination
+  │     │     ├─ Negative hit   ──► 404  (45 s negative cache)
+  │     │     └─ Miss           ──► PostgreSQL ──► warm cache
+  │     │                           (≤ 24 h, jittered, bounded by link expiry)
   │     │
-  │     ├─► Bloom Filter Cache Gatekeeper (lib/cache-gatekeeper.js)
-  │     │     ├─ 1st Hit (Bloom Miss)  ──► Bypass Redis ──► PostgreSQL DB Query
-  │     │     └─ 2nd+ Hit (Bloom Hit)  ──► Redis Cache Lookup
-  │     │                                    ├─ Hit  ──► Cached Payload
-  │     │                                    └─ Miss ──► DB Query ──► Warm Redis Cache
+  │     ├─► Unknown code ──► counts toward invalid-code quota (60 / IP / min)
   │     │
-  │     ├─► Smart Device Resolution
-  │     │     ├─ iOS User-Agent     ──► Redirect to iosUrl (if configured)
-  │     │     ├─ Android User-Agent ──► Redirect to androidUrl (if configured)
-  │     │     └─ Desktop / Other    ──► Redirect to originalUrl
+  │     ├─► Resolve destination
+  │     │     ├─ iOS      ──► iosUrl      (if configured)
+  │     │     ├─ Android  ──► androidUrl  (if configured)
+  │     │     └─ Other    ──► originalUrl
   │     │
-  │     └─► Background Tasks via Next.js after()
-  │           ├─ Record click event (device, browser, OS, geo, isBot flag)
-  │           ├─ Commit click event and human counter together
-  │           └─ If milestone reached (e.g. 10th click) ──► Dispatch HMAC-signed Webhook
+  │     ├─► Respond:  302 redirect │ 404 missing │ 410 deleted/expired │ 503 unavailable
+  │     │
+  │     └─► after() ──► publish privacy-safe click event to Inngest
   │
-  ├─► /api/* (API Routes)
-  │     │
-  │     ├─► Node.js Proxy (proxy.js — REST Rate Limiting)
-  │     │
+  ├─► Inngest  (async, retried)   ◄── registered at /api/inngest
+  │     ├─ Count click (unique event ID ⇒ effectively-once, transactional)
+  │     ├─ Update lifetime / daily / dimensional aggregates (UTC)
+  │     ├─ Store raw event (90-day retention, after validated backfill)
+  │     ├─ Cache invalidation retries
+  │     └─ Every 10th human click ──► signed webhook
+  │           └─ persistent delivery status · 5 attempts · exponential delay
+  │
+  ├─► /api/*  (Route Handlers)
   │     ├─► POST /api/generate
-  │     │     └─ Rate Limit Check ──► Optimistic Bloom Filter ──► DB Insert ──► Warm Cache
-  │     │
-  │     ├─► POST /api/links/import
-  │     │     └─ Batch Row Validation ──► Sequential Creation ──► Detailed Row Status Report
-  │     │
-  │     └─► GET /api/links/export
-  │           └─ Query User Links ──► CSV Injection Neutralization ──► text/csv Download
+  │     │     └─ Quota check ──► Idempotency-Key check ──► validation
+  │     │          ──► unique INSERT (≤ 5 retries) ──► response (+ qrUrl)
+  │     ├─► POST /api/links/import ──► row validation ──► partial-success report
+  │     ├─► GET  /api/links/export ──► formula-safe CSV
+  │     └─► GET  /api/reports/export ──► CSV / PDF / JSON analytics report
   │
-  └─► /dashboard, /shorten, /api-docs (App Pages)
-        └─ NextAuth.js Session ──► PostgreSQL via Prisma ORM
+  └─► /dashboard, /shorten, /api-docs  (App Pages)
+        └─ NextAuth.js database session ──► PostgreSQL via Prisma
 ```
 
 ---
@@ -76,276 +87,298 @@ Client / Browser
 
 | Layer | Technology | Purpose |
 |-------|------------|---------|
-| **Framework** | Next.js 16 (App Router, Turbopack) | Server & Client component architecture |
-| **Database** | PostgreSQL via Supabase | Relational data store for links, clicks, users, and API keys |
-| **ORM** | Prisma 7 (`@prisma/client`, `@prisma/adapter-pg`) | Type-safe database client and migrations |
-| **Caching & Rate Limiting** | Upstash Redis (`@upstash/redis`) | Sliding-window sorted sets and cached link payloads |
-| **Authentication** | NextAuth.js v4 + Prisma Adapter | GitHub and Google OAuth providers |
-| **Testing** | Vitest | Unit and integration test runner |
-| **Load Testing** | k6 | Performance and threshold verification scripts |
-| **Visualizations** | Chart.js & `react-chartjs-2` | Interactive analytics charts |
-| **Utilities** | `nanoid`, `qrcode`, `ua-parser-js` | Base62 ID generation, QR codes, User-Agent parsing |
-| **Styling** | Vanilla CSS + Design Tokens | Custom CSS variables and responsive glassmorphism |
-| **Deployment** | Vercel | Serverless hosting with Node.js proxy execution |
+| **Framework** | Next.js 16 (App Router) · React 19 | Server and client components, route handlers |
+| **Database** | PostgreSQL via Supabase | Durable links, aggregates, users, keys |
+| **ORM** | Prisma 7 | Type-safe client and tracked migrations |
+| **Cache & Quotas** | Upstash Redis | Redirect cache-aside and distributed rate limits |
+| **Background Jobs** | Inngest | Click processing, webhook delivery, cache-invalidation retries |
+| **Authentication** | NextAuth.js v4 + Prisma adapter | GitHub and Google OAuth, database sessions |
+| **Visualizations** | Chart.js · `react-chartjs-2` | Dashboard charts |
+| **Utilities** | `nanoid` · `qrcode` · `ua-parser-js` | Code generation, QR PNGs, device/browser/OS parsing |
+| **Testing** | Vitest · k6 | Unit/route tests and load tests |
+| **Styling** | Vanilla CSS + design tokens | Responsive glassmorphism |
+| **Deployment** | Vercel | Serverless hosting |
 
 ---
 
-## 📊 Database Schema
+## 🗄️ Data Model
 
-```prisma
-model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String?   @unique
-  emailVerified DateTime?
-  image         String?
-  createdAt     DateTime  @default(now())
-  accounts      Account[]
-  sessions      Session[]
-  urls          Url[]
-  apiKeys       ApiKey[]
-}
+Exact definitions live in [`prisma/schema.prisma`](prisma/schema.prisma).
 
-model Url {
-  id            String    @id @default(cuid())
-  shortCode     String    @unique
-  originalUrl   String    @db.Text
-  iosUrl        String?   @db.Text
-  androidUrl    String?   @db.Text
-  webhookUrl    String?   @db.Text
-  webhookSecret String?   @db.Text
-  customAlias   String?
-  userId        String?
-  apiKeyId      String?
-  expiresAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  isActive      Boolean   @default(true)
-  clickCount    Int       @default(0)
-  user          User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
-  clicks        Click[]
-
-  @@index([userId])
-  @@index([createdAt])
-  @@index([expiresAt])
-  @@index([userId, createdAt])
-  @@index([isActive])
-}
-
-model Click {
-  id        String   @id @default(cuid())
-  shortCode String
-  timestamp DateTime @default(now())
-  ipHash    String?
-  country   String?
-  city      String?
-  device    String?
-  browser   String?
-  os        String?
-  referrer  String?
-  isBot     Boolean  @default(false)
-  url       Url      @relation(fields: [shortCode], references: [shortCode], onDelete: Cascade)
-
-  @@index([shortCode])
-  @@index([timestamp])
-  @@index([shortCode, isBot])
-}
-
-model ApiKey {
-  id        String    @id @default(cuid())
-  userId    String
-  keyHash   String    @unique
-  name      String
-  createdAt DateTime  @default(now())
-  lastUsed  DateTime?
-  isActive  Boolean   @default(true)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}
-
-// NextAuth Models: Account, Session, VerificationToken
-```
+| Area | Holds |
+|------|-------|
+| **Auth** | Users, OAuth accounts and database sessions (NextAuth + Prisma adapter) |
+| **Links** | Destination, optional iOS/Android URLs, expiry, owner, tombstone state |
+| **API keys** | SHA-256 hash, name, last-used timestamp. Plaintext is never stored |
+| **Click aggregates** | Permanent lifetime, daily and dimensional (country / device / browser / OS / referrer domain) counts, split human vs. bot |
+| **Raw click events** | Retained **90 days**, only after validated historical backfill. No raw IPs, referrers stored as domains |
+| **Webhook deliveries** | Persistent per-attempt status, owner-visible |
+| **Idempotency records** | 24-hour replay window, scoped to user/API-key identity |
 
 ---
 
-## 🛡️ Rate Limiting Tiers
+## 🛡️ Rate Limiting
 
-Rate limiting is enforced using a sliding-window sorted-set algorithm (`lib/ratelimit.js`) and Node.js proxy (`proxy.js`):
+Redis-backed quotas, per minute:
 
-| Scope | Target Identifier | Limit | Window | Action on Exceeded |
-|-------|-------------------|-------|--------|---------------------|
-| **Redirects** | `redirect:<IP>` | 200 req | 60 sec | HTTP 429 + `Retry-After` |
-| **Anonymous Link Creation** | `ip:<IP>` | 5 req | 60 sec | HTTP 429 + `Retry-After` |
-| **Authenticated Users** | `user:<UserID>` | 50 req | 60 sec | HTTP 429 + `Retry-After` |
-| **API Keys** | `apikey:<UserID>` | 100 req | 60 sec | HTTP 429 + `Retry-After` |
-| **Link Listing API** | `links-list:<UserID>` | 60 req | 60 sec | HTTP 429 + `Retry-After` |
-| **Bulk CSV Import** | `links-import:<UserID>` | 5 req | 60 sec | HTTP 429 + `Retry-After` |
-| **Bulk CSV Export** | `links-export:<UserID>` | 10 req | 60 sec | HTTP 429 + `Retry-After` |
+| Scope | Identifier | Limit |
+|-------|------------|------:|
+| Anonymous link creation | IP | **10** |
+| Session link creation | user | **50** |
+| API-key link creation | API key | **100** |
+| CSV import | user | **3** |
+| Link management | user | **60** |
+| Invalid-code scans | IP | **60** |
+| Analytics downloads (CSV / PDF) | owner | **5** |
 
-*Note: The rate limiter fails open if Redis is temporarily unreachable, ensuring core redirect availability.*
+Valid redirects carry **no extra rate-limit operation**. Errors are safe JSON with consistent limit headers where available.
+
+**If Redis is unavailable:** anonymous and API-key writes return `503`; session-based management fails open with a logged warning.
 
 ---
 
-## 🔑 API Key System
-
-Developers can authenticate programmatically using API keys via the `Authorization` header (`Authorization: Bearer sl_...`):
+## 🔑 API
 
 ```bash
-# Create a short link with device redirects via API key
-curl -X POST https://short-links-mlku.vercel.app/api/generate \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer sl_your_api_key_here" \
-  -d '{
-    "url": "https://example.com/long-page",
-    "customAlias": "my-campaign",
-    "iosUrl": "https://apps.apple.com/app/id123456789",
-    "androidUrl": "https://play.google.com/store/apps/details?id=com.example.app"
-  }'
+curl -X POST https://YOUR_HOST/api/generate \
+  -H 'Authorization: Bearer sl_YOUR_KEY' \
+  -H 'Idempotency-Key: campaign-request-001' \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/campaign","customAlias":"campaign-2026"}'
 ```
 
-- Keys are generated as `sl_` prefixed high-entropy tokens and stored solely as **SHA-256** hashes.
-- Plaintext keys are presented **exactly once** upon creation in the UI.
-- Up to **5 active keys** per user account.
-- `lastUsed` timestamp is updated asynchronously on every authenticated request without adding latency to the response.
+**Response:** `success`, `shortCode`, `shortUrl`, `originalUrl`, `expiresAt`, `createdAt`, `qrUrl`. Secrets never appear in link responses.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /api/generate` | Create a link. API key or session optional; anonymous supported |
+| `GET /api/links?q=&traffic=human&page=1` | Owner-wide search and totals, paginated links |
+| `GET /api/links/matches?url=...` | Session-only owned duplicate choices |
+| `GET` `PATCH` `DELETE /api/links/:code` | Owner-only read / edit / tombstone |
+| `GET /api/analytics/:code?traffic=human` | Owner-only human / all / bot aggregate analytics |
+| `GET` `POST /api/links/:code/webhooks` | Owner-only delivery status / manual retry of failed deliveries |
+| `POST /api/links/import` · `GET /api/links/export` | Owner-only CSV/JSON import and CSV export |
+| `GET /api/reports/export` | Owner-only analytics export (CSV / PDF / JSON) |
+| `GET /api/qr/:code` | Public PNG for an active, unexpired public link |
+| `GET` `POST /api/keys` · `DELETE /api/keys/:id` | Session-only key management |
 
 ---
 
-## 📈 Analytics & Click Tracking
+## 📈 Analytics & Export
 
-Each link click records a detailed event asynchronously in the background via Next.js `after()`:
+### Collection
 
-- **Device**: Classified as `mobile`, `tablet`, or `desktop` via `ua-parser-js`.
-- **Browser & OS**: Extracted client browser name and operating system.
-- **Geo-Location**: Country and city resolved via IP lookup.
-- **Referrer**: Captured HTTP Referer header or direct referral tag.
-- **Privacy Hashing**: IP addresses are one-way hashed with SHA-256 and `IP_HASH_SALT`; raw client IPs are never stored.
-- **Bot Detection**: Automated crawlers and preview bots are flagged with `isBot: true` and excluded from core click metrics.
+- Events are published privacy-safe: **raw IPs are never stored**, referrers are reduced to domains.
+- Counts are **UTC** calendar days. Human, bot and all-traffic views are available everywhere.
+- Raw events are kept 90 days; aggregates are permanent.
 
-### Visualized Metrics (Dashboard)
-- **30-Day Timeline Chart** (`Line`): Daily non-bot clicks vs. total traffic.
-- **Device Breakdown** (`Doughnut`): Mobile vs. Desktop vs. Tablet share.
-- **Browser Distribution** (`Bar`): Chrome, Safari, Firefox, Edge, etc.
-- **Geographic & Referrer Distribution**: Top countries and referral sources.
-- **Bot Traffic Toggle**: View clean organic clicks or inspect bot crawler hits.
+### Exporting
 
----
+Open the dashboard or a link's analytics page and choose:
 
-## 🔒 Security Architecture
+1. **Scope**: all owned links, or one link
+2. **Period**: 7 / 30 / 90-day preset, or custom UTC dates
+3. **Traffic**: human, bot or all
+4. **Format**: **Export CSV** or **Download PDF**
 
-- **Resource Ownership Verification**: Every link mutation (`GET`, `PATCH`, `DELETE`) enforces user ownership checks to prevent unauthorized cross-tenant modifications.
-- **Prisma Parameterized Queries**: All database queries are executed via Prisma ORM parameterized statements, eliminating raw SQL injection vulnerabilities.
-- **Content Security Policy & Security Headers**: Enforced via `next.config.mjs` with `Strict-Transport-Security` (HSTS), `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, and restricted `connect-src` / `form-action` origins.
-- **CSV Formula Injection Sanitization**: All exported CSV cell values starting with formula-triggering characters (`=`, `+`, `-`, `@`, `\t`, `\r`) are automatically neutralized with single quotes (`'`) in `lib/csv.js`.
-- **HMAC-SHA256 Webhook Verification**: Outgoing webhook milestone payloads include an `X-ShortLinks-Signature` header computed as `sha256=<hex_hmac>` when the link has a configured `webhookSecret` (unsigned otherwise):
-  ```javascript
-  // Consumer verification example:
-  const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
-  const isValid = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
-  ```
-- **IP Anonymization**: IP addresses are hashed using SHA-256 with a secret salt (`IP_HASH_SALT`) before persistence; raw client IPs are never written to the database.
-- **API Key Security**: API keys are generated with high entropy (`sl_...`) and stored solely as SHA-256 hashes (`keyHash`). Plaintext keys are presented once upon creation.
-- **URL Scheme Restriction**: Enforces strict `http:` and `https:` validation (`lib/shortcode.js`), rejecting `javascript:`, `data:`, or `file:` URIs.
+Selected-period totals use the same query as the dashboard. Lifetime totals stay separately labeled.
 
----
-
-## 🧪 Testing & CI Pipeline
-
-### Automated Test Suite (`Vitest`)
-
-The repository includes utility and mocked route regression tests. Run `npm test` for the current count:
-
-| Test Suite | File | Focus Area |
-|------------|------|------------|
-| **Bloom Filter** | `tests/bloom.test.js` | FNV-1a hashing, bitwise tracking, collision resistance |
-| **Shortcode & Aliases** | `tests/shortcode.test.js` | Base62 generation, custom alias rules, reserved routes, URL validation |
-| **Rate Limiter** | `tests/ratelimit.test.js` | Window boundaries, exact limits, over-limit rejections, fail-open behavior |
-| **API Generation** | `tests/generate.test.js` | POST `/api/generate` handler integration, payload validation, QR output |
-| **Smart Redirects** | `tests/smart_redirects.test.js` | iOS/Android device override resolution, fallback logic |
-| **Bot Detection** | `tests/bot.test.js` | Search crawler patterns, standard browser User-Agents |
-| **CSV Export Security** | `tests/csv_export.test.js` | Neutralization of formula/DDE injection characters |
-| **IP Privacy** | `tests/analytics.test.js` | Salted SHA-256 IP hashing consistency and privacy |
-
-Run the test suite:
 ```bash
-npm test
+# Daily human-traffic aggregates for the last 30 days, as CSV
+GET /api/reports/export?format=csv&mode=daily&traffic=human&range=30
+
+# One link, custom UTC range, PDF
+GET /api/reports/export?format=pdf&shortCode=CODE&range=custom&start=YYYY-MM-DD&end=YYYY-MM-DD
 ```
 
+`format=json` returns authorized report data. The report endpoint is separate from `/api/links/export` (which remains the lifetime link export with its original columns) so it can never shadow a short code named `export`.
+
+<details>
+<summary><b>CSV modes, limits and PDF contents</b></summary>
+
+<br>
+
+**CSV modes:** links with period counts · daily aggregates · dimension aggregates (country / device / browser / OS / referrer) · recent raw events.
+
+Raw-event exports require the **entire** requested UTC range to fall inside the rolling 90-day window; older periods use permanent aggregates. Empty CSVs still contain headers; empty PDFs explain that no clicks were recorded.
+
+| Default limit | Value |
+|---------------|------:|
+| Calendar days per report | 366 |
+| Owned links per report | 1,000 |
+| Rows per aggregate query | 20,000 |
+| Raw rows per CSV | 10,000 |
+| CSV size | 16 MiB |
+| Cell length | 8,192 chars (longer cells are capped) |
+
+Oversized requests fail clearly with `413`: choose fewer links or days. Overrides are bounded and documented in `.env.example`.
+
+**CSV format:** UTF-8 with BOM, quoted, formula-safe. Reports never contain IP hashes, API keys, webhook secrets or session fields.
+
+**PDF contents:** metadata, filtered summary metrics, vector charts, all daily rows and top-50 dimension tables, repeated table headings and page numbers. Destination metadata includes the **domain only**.
+
+**Known PDF limits:** UTC is the only report timezone (stored daily aggregates cannot be rebucketed exactly into another zone). Built-in PDF fonts keep deployment lightweight, so unsupported characters render as `?` and long labels are shortened. CSV retains full Unicode. Conversion tracking is out of scope.
+
+</details>
+
 ---
 
-## 🚦 Load Testing (`k6`)
+## 🔔 Webhooks
 
-The `load-test/` directory contains automated performance test scripts with threshold assertions:
+Configure a webhook URL on a link with your own **16–256 character signing secret** and retain that secret at your receiver.
 
-- **Redirect Load Test** (`load-test/redirect-test.js`):
-  - Simulates 20 concurrent virtual users (VUs) for 30 seconds
-  - Thresholds: `http_req_duration: ['p(95)<50']` (95% under 50ms), `http_req_failed: ['rate<0.01']` (<1% failures)
-- **Generation Load Test** (`load-test/generate-test.js`):
-  - Simulates 5 concurrent VUs for 20 seconds against link creation
-  - Thresholds: `http_req_duration: ['p(95)<150']` (95% under 150ms), `http_req_failed: ['rate<0.05']` (<5% failures)
+- Fires at every **ten human clicks**
+- **SSRF-protected** (public HTTPS destinations only)
+- **Five attempts** with exponential delays
+- Persistent delivery status, visible to the link owner, with manual retry for failed deliveries
 
-Execute tests with k6:
+```javascript
+// Consumer-side verification
+const expected = 'sha256=' + crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
+const isValid  = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))
+```
+
+The signature arrives in the `X-ShortLinks-Signature` header as `sha256=<hex_hmac>`.
+
+---
+
+## 🔒 Security
+
+| Area | Measure |
+|------|---------|
+| **Ownership** | Every link read/mutation and analytics/report call enforces owner checks |
+| **Queries** | Prisma parameterized statements, no raw SQL |
+| **Headers** | CSP, HSTS, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy`, set in `next.config.mjs` |
+| **URL validation** | `http:` / `https:` only. `javascript:`, `data:`, `file:` rejected |
+| **Webhooks** | SSRF-protected destinations, HMAC-SHA256 signatures, retained secrets never returned in responses |
+| **CSV** | Formula-injection neutralization on every export |
+| **Privacy** | Raw IPs never stored; hashing uses `IP_HASH_SALT` (≥ 32 random characters) |
+| **API keys** | High-entropy `sl_` tokens, stored only as SHA-256 hashes, shown once at creation |
+| **Account linking** | OAuth email auto-linking is **disabled**. Matching email alone does not merge providers; link the second provider while signed in |
+| **Deletion** | Tombstones return `410` and prevent code reassignment |
+| **Anonymous links** | Have no account owner and are never silently claimed later |
+
+---
+
+## 🧪 Testing & CI
+
 ```bash
-# Run redirect load test against local environment
+npm test        # Vitest
+npm run lint    # ESLint
+```
+
+CI runs Prisma client generation, lint, tests and a production build. See [TESTING](docs/TESTING.md) for coverage and strategy.
+
+> [!IMPORTANT]
+> Tests mock hosted services. A passing CI run does **not** establish live OAuth, database, Redis or throughput health.
+
+### 🚦 Load testing (k6)
+
+Scripts in [`load-test/`](load-test/) assert latency and error-rate thresholds. Methodology and results: [BENCHMARKS](docs/BENCHMARKS.md).
+
+```bash
+# Local
 k6 run load-test/redirect-test.js
 
-# Run against a remote deployment with custom short code
-k6 run --env TARGET_HOST=https://short-links-mlku.vercel.app --env TARGET_CODE=myCode load-test/redirect-test.js
+# Remote deployment with a real short code
+k6 run --env TARGET_HOST=https://short-links-mlku.vercel.app \
+       --env TARGET_CODE=myCode load-test/redirect-test.js
 ```
 
 ---
 
 ## 🚀 Getting Started
 
-### Prerequisites
-
-- Node.js 20+
-- PostgreSQL database (e.g. Supabase)
-- Upstash Redis instance
-- GitHub or Google OAuth application credentials
-
-### 1. Clone Repository
+**Requirements:** Node **22.12+** or **24**, a *disposable* PostgreSQL database, and a *dedicated* Upstash development database. Do not point local tests at production.
 
 ```bash
 git clone https://github.com/TanushHAlder04/short_links.git
 cd short_links
-npm install
-```
 
-### 2. Configure Environment
+cp .env.example .env      # replace every placeholder
 
-Copy the example environment file (Prisma CLI reads `.env`):
-```bash
-cp .env.example .env
-```
-Fill in the database connection strings, OAuth credentials, and Upstash Redis secrets in `.env` (see [`.env.example`](.env.example) for documentation).
-
-### 3. Deploy Database Migrations
-
-Apply tracked Prisma migrations to your database:
-```bash
-# Apply pending migrations
-npx prisma migrate deploy
-
-# Generate Prisma client artifacts
+npm ci
 npx prisma generate
-```
-
-*(For local schema iterations, use `npx prisma migrate dev`)*
-
-### 4. Run Test Suite
-
-```bash
-npm test
-```
-
-### 5. Start Development Server
-
-```bash
+npm run env:check
+npx prisma migrate deploy
 npm run dev
+
+# in a second terminal
+npm run inngest:dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000).
+> [!WARNING]
+> `migrate deploy` applies tracked migrations to whichever database you configured. **Verify its identity first.** Existing installations must follow the migration procedure in [ARCHITECTURE](docs/ARCHITECTURE.md#migration-and-rollback), including batched backfill and validation, *before* enabling retention. No migration or backfill ever runs automatically during startup or build.
+
+---
+
+## ⚙️ Production Configuration
+
+| Variable | Notes |
+|----------|-------|
+| `NEXTAUTH_URL` | Deployment origin, no trailing slash |
+| `NEXT_PUBLIC_HOST` | Same origin. **Build-time** variable, redeploy after changing |
+| `NEXTAUTH_SECRET` | Stable random secret |
+| `IP_HASH_SALT` | ≥ 32 random characters |
+| `DATABASE_URL` | Runtime connection, from the correct Supabase project's **Connect** dialog (URL-encode the password) |
+| `DIRECT_URL` | Used by Prisma CLI for migrations: direct connection or Session pooler |
+| Upstash credentials | Dedicated production Redis database |
+| Inngest event + signing keys | Register `/api/inngest` in Inngest and **remove `INNGEST_DEV`** |
+
+See [`.env.example`](.env.example) for exact names and bounded overrides.
+
+**OAuth callbacks** must match exactly in each provider's console:
+
+```text
+https://YOUR_HOST/api/auth/callback/google
+https://YOUR_HOST/api/auth/callback/github
+```
+
+<details>
+<summary><b>🩺 Troubleshooting login and database errors</b></summary>
+
+<br>
+
+OAuth callback mismatches and PostgreSQL connection errors are **separate failures**. Changing OAuth providers never repairs a database error.
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Google `redirect_uri_mismatch` | Callback URL not registered | Fix it in the provider console |
+| NextAuth `error=Callback` | Server-side failure during callback | Check Vercel logs for `[auth]` codes, database connectivity/migrations, and matching client ID/secret |
+| `ENOTFOUND` | Hostname does not resolve | Check the hostname and that the project is available |
+| `Tenant or user not found` | Pooler project/username/endpoint mismatch | Copy the full **Transaction pooler** URI from Supabase's **Connect** dialog into Vercel's Production `DATABASE_URL` |
+
+Notes for the pooler error: shared-pooler usernames look like `postgres.PROJECT_REF`; the pooler hostname must belong to that same project; use the **database password** (URL-encoded), not a Supabase API key; never guess the region or host prefix. `DIRECT_URL` only affects migrations. It will not fix runtime login.
+
+Run `npm run db:check` for a read-only connection and auth-table check. It prints no credentials. Local success does not validate Vercel's separately configured variables. **Redeploy after correcting production variables.**
+
+Reference: [Supabase: "Tenant or user not found"](https://supabase.com/docs/guides/troubleshooting/tenant-or-user-not-found)
+
+</details>
+
+---
+
+## ⚖️ Guarantees & Limits
+
+| Topic | Behavior |
+|-------|----------|
+| **Click capture** | Publication is best effort until Inngest accepts the event, so rare losses are possible. After acceptance, retries plus database idempotency prevent duplicate counting |
+| **Consistency** | Analytics are **eventually consistent** |
+| **Cache** | Cache-aside with versioned invalidation and Inngest retries |
+| **Not promised** | Lossless click capture, unlimited quota, measured production latency |
+| **Out of scope** | Conversion tracking |
+
+---
+
+## 📚 Documentation
+
+| Doc | Contents |
+|-----|----------|
+| [WALKTHROUGH](docs/WALKTHROUGH.md) | Complete explanation, decisions, deployment checklist. **Start here** |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | System design, migration and rollback |
+| [TESTING](docs/TESTING.md) | Test strategy and coverage |
+| [BENCHMARKS](docs/BENCHMARKS.md) | Load-test methodology and results |
+
 
 ---
 
@@ -353,120 +386,36 @@ Visit [http://localhost:3000](http://localhost:3000).
 
 ```
 short_links/
-├── app/
-│   ├── [shorturl]/
-│   │   └── route.js             # Dynamic redirect handler with smart routing & after() analytics
-│   ├── api/
-│   │   ├── analytics/[shortCode]/route.js # Link analytics query endpoint (with bot filter toggle)
-│   │   ├── auth/[...nextauth]/route.js    # NextAuth OAuth authentication handlers
-│   │   ├── generate/route.js    # URL creation endpoint with QR and validation
-│   │   ├── keys/                # Developer API key management endpoints
-│   │   ├── links/
-│   │   │   ├── route.js         # Paginated links listing & creation delegate
-│   │   │   ├── [shortCode]/     # Single link CRUD (GET, PATCH, DELETE)
-│   │   │   ├── export/route.js  # CSV export endpoint with DDE sanitization
-│   │   │   └── import/route.js  # Bulk CSV/JSON import endpoint
-│   │   ├── qr/[shortCode]/      # QR code generation endpoint
-│   │   └── stats/route.js       # Global link & click summary counters
-│   ├── api-docs/page.js         # API documentation and key management UI
-│   ├── dashboard/
-│   │   ├── page.js              # Link management dashboard with search, import, export
-│   │   └── [shortCode]/page.js  # Detailed visual analytics charts & bot filter
-│   ├── login/page.js            # OAuth sign-in page
-│   ├── shorten/page.js          # Interactive link shortener UI with smart redirect inputs
-│   ├── globals.css              # Design tokens and responsive styles
-│   ├── layout.js               # Root application layout
-│   └── page.js                  # Homepage with animated counters and feature highlights
-├── components/
-│   ├── Footer.js                # Site footer component
-│   ├── Navbar.js                # Fixed blur navigation pill
-│   └── SessionWrapper.js        # NextAuth session context provider
-├── lib/
-│   ├── analytics.js             # Async click recording, bot detection, milestone webhooks
-│   ├── apikeys.js               # API key validation and user authentication helpers
-│   ├── bloom.js                 # Local FNV-1a Bloom filter implementation
-│   ├── cache-gatekeeper.js      # Two-hit Redis caching gatekeeper pattern
-│   ├── csv.js                   # CSV formula injection sanitization utility
-│   ├── logger.js                # Structured JSON logging utility
-│   ├── prisma.js                # Prisma client singleton
-│   ├── ratelimit.js             # Sliding-window Redis rate limiting engine
-│   ├── redis.js                 # Upstash Redis client and stats helpers
-│   └── shortcode.js             # nanoid generator, URL validation, and alias rules
-├── load-test/
-│   ├── generate-test.js         # k6 generation load test with thresholds
-│   └── redirect-test.js         # k6 redirect load test with thresholds
-├── prisma/
-│   ├── migrations/
-│   │   └── 20260825000000_init/ # Baseline database schema migration
-│   ├── schema.prisma            # Data models (Url, Click, User, ApiKey, Account, Session)
-│   └── prisma.config.ts         # Prisma CLI configuration
-├── tests/
-│   ├── analytics.test.js        # IP hashing unit tests
-│   ├── bloom.test.js            # Bloom filter unit tests
-│   ├── bot.test.js              # Bot/crawler detection unit tests
-│   ├── csv_export.test.js       # CSV injection sanitization unit tests
-│   ├── generate.test.js         # URL generation route integration tests
-│   ├── ratelimit.test.js        # Rate limiter boundary unit tests
-│   ├── shortcode.test.js        # Shortcode and alias validation unit tests
-│   └── smart_redirects.test.js  # Smart device redirect unit tests
-├── .env.example                 # Documented environment variable template
-├── .gitignore                   # Git exclusion rules
-├── next.config.mjs              # Security headers, CSP, and Next.js settings
-├── package.json                 # Project scripts and dependencies
-├── proxy.js                     # Next.js 16 Node.js proxy rate limiter
-└── vitest.config.mjs            # Vitest test runner configuration
+├── app/                  # App Router: pages, route handlers, redirect route
+│   ├── [shorturl]/       #   redirect handler
+│   ├── api/              #   generate · links · analytics · reports · keys · qr · inngest · auth
+│   ├── dashboard/        #   link management and per-link analytics
+│   ├── shorten/          #   link creation UI
+│   ├── api-docs/         #   API docs and key management UI
+│   └── login/            #   OAuth sign-in
+├── components/           # Shared UI (navbar, footer, providers)
+├── lib/                  # Cache, quotas, analytics, validation, webhooks, CSV, logging
+├── prisma/               # schema.prisma + tracked migrations
+├── scripts/              # Operational checks (e.g. db:check)
+├── tests/                # Vitest suites
+├── load-test/            # k6 scripts
+├── docs/                 # Walkthrough, architecture, testing, benchmarks, ADRs
+├── prisma.config.ts      # Prisma CLI configuration
+├── next.config.mjs       # Security headers and CSP
+└── vitest.config.mjs     # Test runner configuration
 ```
 
 ---
 
+## 👨‍💻 Author
 
-## 📄 License
+**Tanush Halder**
 
-MIT License. Free for personal and commercial use.
-
-## 👨‍💻 Author & Contact
-
-**Tanush Halder**  
-- GitHub: [@TanushHAlder04](https://github.com/TanushHAlder04)  
+- GitHub: [@TanushHAlder04](https://github.com/TanushHAlder04)
 - Email: [tanushhalder.2004@gmail.com](mailto:tanushhalder.2004@gmail.com)
 
 ---
 
+## 📄 License
 
-## Reliability and metric semantics
-
-- Redirects return HTTP 410 with an HTML explanation for inactive/expired links. Missing links return 404.
-- `after()` awaits click recording. Click insertion and human-counter increment share one database transaction; milestone webhook delivery is awaited after commit. This is best-effort processing, not a durable queue: process failure can still lose events, and webhooks have no retry guarantee.
-- The dashboard summary covers the entire signed-in account. `GET /api/links?q=term` searches all owned links before pagination. Status sorting remains explicitly local to the displayed page, with pagination available.
-- Public totals come from PostgreSQL (CDN cache up to 60 seconds, stale revalidation up to 300 seconds). Bulk imports are included automatically; old Redis counters are ignored.
-- Click totals exclude detected bots by default. `includeBots=true` changes both the lifetime analytics total and its charts. Charts use 30 UTC calendar days including today. Referrer percentages use that same window, not the lifetime total.
-- Local Bloom filters are hints per process; database uniqueness and up to five insert attempts handle collisions. Cache invalidation remains best-effort during Redis outages.
-- Link creation and updates share URL/type/expiry validation. Webhooks require public HTTPS destinations on port 443, without URL credentials. DNS is checked at save and send time, delivery pins the checked IP, and redirects are rejected. Configure `webhookSecret` for HMAC signatures; signing is optional.
-- Creation tiers remain 5 anonymous / 50 session / 100 API-key requests per minute. A separate 300 requests/minute/network ceiling protects all non-auth API routes. Redis Lua atomically checks and records accepted requests; rejected requests do not consume additional slots. Redis outages fail open.
-- CI runs client generation, lint, tests, and a production build. Tests mock hosted services; passing CI does not establish live OAuth, database, Redis, or throughput health.
-
-## Production OAuth and font troubleshooting
-
-Set production `NEXTAUTH_URL` and `NEXT_PUBLIC_HOST` to `https://short-links-mlku.vercel.app` (no trailing slash), and configure a stable `NEXTAUTH_SECRET` and `IP_HASH_SALT`. Redeploy after environment changes.
-
-Register these callbacks in the exact OAuth applications whose IDs are configured in Vercel:
-
-- Google: `https://short-links-mlku.vercel.app/api/auth/callback/google`
-- GitHub: `https://short-links-mlku.vercel.app/api/auth/callback/github`
-
-A Google `redirect_uri_mismatch` is fixed in the provider console. A NextAuth `error=Callback` is a separate server-side failure: check Vercel logs for `[auth]` diagnostic codes, database connectivity/migrations, and the matching client ID/secret. Do not enable automatic email-based account linking as a workaround.
-
-Inter is loaded through `next/font/google` and applied with `--font-inter`; the browser does not need a Google Fonts stylesheet. The CSP continues to allow only self-hosted fonts/styles (plus existing inline styles).
-
-
-### Database errors during OAuth callbacks
-
-NextAuth's Prisma adapter needs database access to persist users, provider accounts, and sessions. Both Google and GitHub can therefore fail at the callback stage when `DATABASE_URL` is incorrect.
-
-For `Tenant or user not found`, copy the complete **Transaction pooler** URI from your Supabase project's **Connect** dialog into Vercel's **Production DATABASE_URL**. Shared-pooler usernames use `postgres.PROJECT_REF`; the exact regional pooler hostname must belong to that same project. Use the database password (URL-encoded), not a Supabase API key. Do not guess the region or pooler host prefix.
-
-`DIRECT_URL` is read by Prisma CLI for migrations; changing it alone does not fix runtime login. Use a direct connection or the Session pooler URI for migrations. A literal DNS `ENOTFOUND` additionally requires checking the hostname and project availability.
-
-Run `npm run db:check` in the environment being diagnosed for a read-only connection/auth-table check. It prints no credentials. Local success does not validate Vercel's separately configured production variables. Redeploy after correcting production variables.
-
-Reference: https://supabase.com/docs/guides/troubleshooting/tenant-or-user-not-found
+MIT. Free for personal and commercial use.

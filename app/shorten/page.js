@@ -1,10 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { Link2, Shuffle, Calendar, Copy, Check, QrCode, ExternalLink, BarChart3, Loader2, AlertCircle, Sparkles } from 'lucide-react'
 import Link from 'next/link'
+import { useSession } from 'next-auth/react'
+import DuplicateChoice from '@/components/DuplicateChoice'
 
 export default function Shorten() {
+  const { status } = useSession()
+  const [matches,setMatches] = useState([])
+  const [desktopUrl,setDesktopUrl] = useState('')
+  const pending = useRef(false)
+  const requestIdentity = useRef(null)
   const [url, setUrl] = useState('')
   const [mode, setMode] = useState('auto') // 'auto' | 'custom'
   const [customAlias, setCustomAlias] = useState('')
@@ -21,40 +28,30 @@ export default function Shorten() {
   const [webhookSecret, setWebhookSecret] = useState('')
   const [showAdvanced, setShowAdvanced] = useState(false)
 
-  const handleGenerate = async () => {
-    setError('')
-    setResult(null)
-
+  const handleGenerate = async (createAnother = false) => {
+    if (pending.current) return
+    setError(''); setResult(null)
     if (!url.trim()) { setError('Please enter a URL'); return }
-    try { new URL(url) } catch { setError('Please enter a valid URL (include https://)'); return }
-
-    setLoading(true)
+    try { const parsed = new URL(url); if (!['https:','http:'].includes(parsed.protocol) || parsed.username || parsed.password) throw Error() } catch { setError('Enter an HTTP/HTTPS URL without credentials'); return }
+    pending.current = true; setLoading(true)
     try {
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          url: url.trim(),
-          customAlias: mode === 'custom' ? customAlias.trim() : undefined,
-          expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
-          iosUrl: iosUrl.trim() || undefined,
-          androidUrl: androidUrl.trim() || undefined,
-          webhookUrl: webhookUrl.trim() || undefined,
-          webhookSecret: webhookSecret || undefined,
-        }),
-      })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        setError(data.message || 'Something went wrong')
-      } else {
-        setResult(data)
+      if (status === 'authenticated' && createAnother !== true) {
+        const response = await fetch(`/api/links/matches?url=${encodeURIComponent(url.trim())}`)
+        const data = await response.json()
+        if (!response.ok) throw Error(data.message || 'Unable to check existing links')
+        if (data.links.length) { setMatches(data.links); return }
       }
-    } catch {
-      setError('Network error — please try again')
-    } finally {
-      setLoading(false)
-    }
+      setMatches([])
+      const body = JSON.stringify({url:url.trim(),customAlias:mode==='custom'?customAlias.trim():undefined,expiresAt:expiresAt?new Date(expiresAt).toISOString():undefined,iosUrl:iosUrl.trim()||undefined,androidUrl:androidUrl.trim()||undefined,desktopUrl:desktopUrl.trim()||undefined,webhookUrl:webhookUrl.trim()||undefined,webhookSecret:webhookSecret||undefined})
+      if (!requestIdentity.current || requestIdentity.current.body !== body) requestIdentity.current = {body,key:crypto.randomUUID()}
+      const res = await fetch('/api/generate',{method:'POST',headers:{'Content-Type':'application/json',...(status==='authenticated'?{'Idempotency-Key':requestIdentity.current.key}:{})},body})
+      const data = await res.json()
+      if (!res.ok || !data.success) throw Error(data.message || 'Unable to create link')
+      setResult(data); requestIdentity.current = null
+    } catch(e) { setError(e.message || 'Network error; retry with the same request') }
+    finally { pending.current = false; setLoading(false) }
   }
+  const reuseLink = link => {setMatches([]);setResult({...link,shortUrl:`${window.location.origin}/${link.shortCode}`,qrUrl:`/api/qr/${link.shortCode}`})}
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(result.shortUrl)
@@ -64,13 +61,16 @@ export default function Shorten() {
 
   const handleDownloadQR = () => {
     const a = document.createElement('a')
-    a.href = result.qrDataUrl
+    a.href = result.qrUrl
     a.download = `qr-${result.shortCode}.png`
     a.click()
   }
 
   const resetForm = () => {
     setResult(null)
+    requestIdentity.current = null
+    setMatches([])
+    setDesktopUrl('')
     setUrl('')
     setCustomAlias('')
     setExpiresAt('')
@@ -105,6 +105,7 @@ export default function Shorten() {
           </p>
         </div>
 
+        {matches.length > 0 && <DuplicateChoice links={matches} onReuse={reuseLink} onCreate={()=>handleGenerate(true)} busy={loading} />}
         {!result ? (
           <div className="glass-card" style={{ padding: '36px 32px' }}>
 
@@ -166,7 +167,7 @@ export default function Shorten() {
               )}
               {mode === 'auto' && (
                 <div style={{ padding: '12px 16px', borderRadius: 'var(--radius-md)', background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.2)', fontSize: '0.8rem', color: 'var(--text-muted)' }}>
-                  A unique 7-character code will be generated (e.g. <code style={{ color: 'var(--accent-violet)' }}>aBcD3f7</code>)
+                  A unique 8-character code will be generated (e.g. <code style={{ color: 'var(--accent-violet)' }}>aBcD3f7K</code>)
                 </div>
               )}
             </div>
@@ -195,7 +196,9 @@ export default function Shorten() {
                   <div>
                     <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6 }}>Click Milestone Webhook URL (optional)</label>
                     <input type="url" className="input-field" placeholder="https://your-api.com/webhooks/clicks" value={webhookUrl} onChange={e => setWebhookUrl(e.target.value)} style={{ fontSize: '0.85rem' }} />
-                    <label htmlFor="webhook-secret" style={{ display: 'block', marginTop: 12 }}>Signing secret (optional)</label>
+                    <label htmlFor="desktop-url" style={{display:'block',marginTop:12}}>Desktop target (optional)</label>
+                    <input id="desktop-url" type="url" className="input-field" value={desktopUrl} onChange={e=>setDesktopUrl(e.target.value)} />
+                    <label htmlFor="webhook-secret" style={{ display: 'block', marginTop: 12 }}>Signing secret (required for webhooks; 16-256 characters)</label>
                     <input id="webhook-secret" type="password" autoComplete="new-password" className="input-field" value={webhookSecret} onChange={e => setWebhookSecret(e.target.value)} />
                   </div>
                 </div>
@@ -276,7 +279,7 @@ export default function Shorten() {
               {showQR && (
                 <div className="animate-fade-in" style={{ textAlign: 'center', paddingTop: 16 }}>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={result.qrDataUrl} alt="QR Code" style={{ width: 180, height: 180, borderRadius: 12, border: '1px solid var(--border)' }} />
+                  <img src={result.qrUrl} alt="QR Code" style={{ width: 180, height: 180, borderRadius: 12, border: '1px solid var(--border)' }} />
                   <div style={{ marginTop: 12 }}>
                     <button id="download-qr-btn" onClick={handleDownloadQR} className="btn-secondary" style={{ fontSize: '0.875rem', padding: '8px 20px' }}>
                       Download PNG

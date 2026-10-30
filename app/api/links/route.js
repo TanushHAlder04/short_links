@@ -1,107 +1,20 @@
-// app/api/links/route.js
-// List links and create authenticated links.
-
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-import { prisma } from '@/lib/prisma'
-import { getAuthUserId } from '@/lib/apikeys'
-import { checkRateLimit } from '@/lib/ratelimit'
-import { POST as createLinkHandler } from '@/app/api/generate/route'
-
-function safeSortBy(sortBy) {
-  const allowed = ['createdAt', 'clickCount']
-  return allowed.includes(sortBy) ? sortBy : 'createdAt'
-}
-
-// GET /api/links — list authenticated user's links
+import { identityFor } from '@/lib/identity'
+import { enforceLimit } from '@/lib/ratelimit'
+import { listLinks } from '@/lib/services/queries'
+import { errorResponse } from '@/lib/errors'
+import { POST as generate } from '@/app/api/generate/route'
 export async function GET(request) {
   try {
-    const session = await getServerSession(authOptions)
-    const userId = await getAuthUserId(request, session)
-
-    if (!userId) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const { allowed, reset } = await checkRateLimit(`links-list:${userId}`, {
-      limit: 60,
-      windowMs: 60_000,
-    })
-
-    if (!allowed) {
-      return Response.json(
-        { error: 'Too many requests. Please slow down.' },
-        {
-          status: 429,
-          headers: {
-            'X-RateLimit-Reset': String(reset),
-            'Retry-After': '60',
-          },
-        }
-      )
-    }
-
-    const { searchParams } = new URL(request.url)
-
-    const page = Math.max(1, (parseInt(searchParams.get('page') || '1', 10) || 1))
-    const limit = Math.min(50, Math.max(1, (parseInt(searchParams.get('limit') || '20', 10) || 20)))
-    const sortBy = safeSortBy(searchParams.get('sortBy') || 'createdAt')
-    const order = searchParams.get('order') === 'asc' ? 'asc' : 'desc'
-
-    const query = (searchParams.get('q') || '').trim().slice(0, 300)
-    const where = { userId, ...(query ? { OR: [
-      { shortCode: { contains: query, mode: 'insensitive' } },
-      { originalUrl: { contains: query, mode: 'insensitive' } },
-    ] } : {}) }
-    const now = new Date()
-    const [links, total, accountTotal, clicks, active, thisWeek] = await Promise.all([
-      prisma.url.findMany({
-        where,
-        orderBy: [{ [sortBy]: order }, { id: order }],
-        skip: (page - 1) * limit,
-        take: limit,
-        select: {
-          id: true,
-          shortCode: true,
-          originalUrl: true,
-          customAlias: true,
-          clickCount: true,
-          isActive: true,
-          expiresAt: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      }),
-
-      prisma.url.count({ where }),
-      prisma.url.count({ where: { userId } }),
-      prisma.click.count({ where: { isBot: false, url: { userId } } }),
-      prisma.url.count({ where: { userId, isActive: true, OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] } }),
-      prisma.url.count({ where: { userId, createdAt: { gte: new Date(now.getTime() - 7 * 86400000) } } }),
-    ])
-
-    return Response.json({
-      links,
-      stats: { total: accountTotal, clicks, active, thisWeek },
-      pagination: {
-        page,
-        limit,
-        total,
-        pages: Math.ceil(total / limit),
-      },
-    })
-  } catch (error) {
-    console.error('GET /api/links error:', error)
-
+    const identity = await identityFor(request, { required: true })
+    const headers = await enforceLimit(request, identity, 'dashboard')
     return Response.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+      await listLinks(identity.userId, new URL(request.url).searchParams),
+      { headers }
     )
+  } catch (error) {
+    return errorResponse(error)
   }
 }
-
-// POST /api/links — thin wrapper over /api/generate single source of truth
 export async function POST(request) {
-  return createLinkHandler(request)
+  return generate(request)
 }
-

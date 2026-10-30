@@ -120,7 +120,7 @@ export default function ApiDocs() {
         </p>
         <CodeBlock code={`curl -H "Authorization: Bearer sl_your_api_key" ${HOST}/api/links`} />
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-          <div className="badge badge-green">Creation: up to 100 req/min; network ceiling: 300</div>
+          <div className="badge badge-green">Creation: 10 anonymous / 50 session / 100 API-key per minute</div>
           <div className="badge badge-purple">Format: JSON</div>
           <div className="badge badge-cyan">Base URL: {HOST}</div>
         </div>
@@ -133,7 +133,7 @@ export default function ApiDocs() {
 
       <Endpoint
         method="POST" path="/api/generate"
-        desc="Create a new short URL. Works without authentication (rate-limited). Authenticated requests get higher limits and link tracking."
+        desc="Create a new eight-character short URL. Works anonymously. Authenticated clients can send Idempotency-Key for 24-hour request replay. QR is returned as an on-demand qrUrl. Duplicate destinations are allowed."
         params={[
           { name: 'url', type: 'string*', desc: 'The original URL to shorten' },
           { name: 'customAlias', type: 'string?', desc: '3–30 chars, alphanumeric + hyphens' },

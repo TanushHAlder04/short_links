@@ -1,25 +1,35 @@
 name: CI
-on:
-  push:
-  pull_request:
+on: [push, pull_request]
 permissions:
   contents: read
 jobs:
   verify:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: shortlinks_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U test -d shortlinks_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
-      DATABASE_URL: postgresql://test:test@localhost:5432/shortlinks
-      DIRECT_URL: postgresql://test:test@localhost:5432/shortlinks
-      NEXTAUTH_URL: http://localhost:3000
-      NEXTAUTH_SECRET: ci-placeholder-not-for-production
-      NEXT_PUBLIC_HOST: http://localhost:3000
-      IP_HASH_SALT: ci-placeholder-not-for-production
-      UPSTASH_REDIS_REST_URL: https://example.upstash.io
-      UPSTASH_REDIS_REST_TOKEN: ci-placeholder
-      GOOGLE_CLIENT_ID: ci-placeholder
-      GOOGLE_CLIENT_SECRET: ci-placeholder
-      GITHUB_ID: ci-placeholder
-      GITHUB_SECRET: ci-placeholder
+      DATABASE_URL: postgresql://test:test@localhost:5432/shortlinks_test
+      DIRECT_URL: postgresql://test:test@localhost:5432/shortlinks_test
+      TEST_DATABASE_URL: postgresql://test:test@localhost:5432/shortlinks_test
+      NEXTAUTH_URL: http://localhost:3100
+      NEXTAUTH_SECRET: disposable-ci-secret-at-least-32-characters
+      NEXT_PUBLIC_HOST: http://localhost:3100
+      IP_HASH_SALT: disposable-ci-ip-salt-at-least-32-characters
+      INNGEST_DEV: '1'
+      GOOGLE_CLIENT_ID: test
+      GOOGLE_CLIENT_SECRET: test
+      GITHUB_ID: test
+      GITHUB_SECRET: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -28,6 +38,32 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx prisma generate
+      - run: npx prisma validate
+      - run: npx prisma migrate deploy
+      - run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
       - run: npm run lint
       - run: npm test
+      - run: npm run test:integration
+      - run: npm run test:coverage
       - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - name: Start local Inngest
+        run: |
+          npx inngest-cli@1.45.1 dev --host 127.0.0.1 -u http://localhost:3100/api/inngest --no-discovery --retry-interval 2 > /tmp/inngest.log 2>&1 &
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:8288/health && exit 0; sleep 1; done
+          exit 1
+      - run: npm run test:e2e
+      - name: Production dependency advisory report
+        if: always()
+        run: npm run audit:report
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: verification-reports
+          path: |
+            coverage/
+            playwright-report/
+            test-results/
+            reports/
+            /tmp/inngest.log
+          retention-days: 7

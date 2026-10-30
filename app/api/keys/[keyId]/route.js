@@ -1,21 +1,22 @@
-// app/api/keys/[keyId]/route.js
-// Revoke an API key.
-
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
+import { identityFor } from '@/lib/identity'
+import { enforceLimit } from '@/lib/ratelimit'
 import { prisma } from '@/lib/prisma'
-
+import { AppError, errorResponse } from '@/lib/errors'
 export async function DELETE(request, { params }) {
-  const session = await getServerSession(authOptions)
-  if (!session?.user?.id) return Response.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { keyId } = await params
-
-  const key = await prisma.apiKey.findUnique({ where: { id: keyId } })
-  if (!key) return Response.json({ error: 'Key not found' }, { status: 404 })
-  if (key.userId !== session.user.id) return Response.json({ error: 'Forbidden' }, { status: 403 })
-
-  await prisma.apiKey.update({ where: { id: keyId }, data: { isActive: false } })
-
-  return Response.json({ success: true })
+  try {
+    const identity = await identityFor(request, {
+        required: true,
+        sessionOnly: true,
+      }),
+      headers = await enforceLimit(request, identity, 'dashboard'),
+      { keyId } = await params
+    const result = await prisma.apiKey.updateMany({
+      where: { id: keyId, userId: identity.userId },
+      data: { isActive: false },
+    })
+    if (!result.count) throw new AppError('Key not found', 404)
+    return Response.json({ success: true }, { headers })
+  } catch (error) {
+    return errorResponse(error)
+  }
 }

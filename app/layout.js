@@ -16,7 +16,7 @@ export const metadata = {
     template: '%s | ShortLinks',
   },
   description:
-    'Create short links, track clicks, view real-time analytics, and manage campaigns. Built with Redis caching, PostgreSQL, and async analytics processing.',
+    'Create short links, track clicks, view background analytics, and manage campaigns. Built with Redis caching, PostgreSQL, and async analytics processing.',
   keywords: ['url shortener', 'link analytics', 'short links', 'click tracking', 'QR code'],
   authors: [{ name: 'ShortLinks' }],
   openGraph: {

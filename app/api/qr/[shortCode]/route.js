@@ -8,7 +8,12 @@ export async function GET(request, { params }) {
   const { shortCode } = await params
 
   const url = await prisma.url.findUnique({
-    where: { shortCode, isActive: true },
+    where: {
+      shortCode,
+      isActive: true,
+      deletedAt: null,
+      OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
+    },
     select: { shortCode: true },
   })
 
@@ -30,7 +35,7 @@ export async function GET(request, { params }) {
     status: 200,
     headers: {
       'Content-Type': 'image/png',
-      'Cache-Control': 'public, max-age=86400', // Cache QR for 24 hours
+      'Cache-Control': 'public, max-age=60', // Cache QR for 24 hours
       'Content-Disposition': `inline; filename="qr-${shortCode}.png"`,
     },
   })

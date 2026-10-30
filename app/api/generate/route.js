@@ -1,165 +1,27 @@
-// app/api/generate/route.js
-// Creates a new shortened URL.
-// Supports: auto-generated short codes, custom aliases, expiry dates, API key auth.
-
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-import { prisma } from '@/lib/prisma'
-import { generateUniqueCode, validateAlias, isValidUrl } from '@/lib/shortcode'
-import { shortCodeBloom } from '@/lib/bloom'
+import { logger } from '@/lib/logger'
+import { identityFor } from '@/lib/identity'
+import { readJson } from '@/lib/request'
+import { enforceLimit } from '@/lib/ratelimit'
+import { createLink } from '@/lib/services/links'
 import { cacheSet } from '@/lib/redis'
-import { validateApiKey } from '@/lib/apikeys'
-import { checkRateLimit, RATE_LIMITS } from '@/lib/ratelimit'
-import QRCode from 'qrcode'
-import { validateLinkOptions, ValidationError } from '@/lib/link-validation'
-
+import { errorResponse } from '@/lib/errors'
 export async function POST(request) {
+  const started = Date.now()
   try {
-    const body = await request.json().catch(() => { throw new ValidationError('Invalid JSON') })
-    if (!body || typeof body !== 'object' || Array.isArray(body)) throw new ValidationError('Expected a JSON object')
-    const { url, customAlias } = body
-
-    // ── Validate URL ────────────────────────────────────────────────────────
-    if (!url || typeof url !== 'string') {
-      return Response.json({ success: false, message: 'URL is required' }, { status: 400 })
-    }
-
-    if (!isValidUrl(url)) {
-      return Response.json({ success: false, message: 'Invalid URL. Only http and https URLs are allowed.' }, { status: 400 })
-    }
-
-    const session = await getServerSession(authOptions)
-    let userId = session?.user?.id || null
-    let apiKeyId = null
-
-    if (!userId) {
-      const authHeader = request.headers.get('Authorization')
-      if (authHeader) {
-        const apiKey = await validateApiKey(authHeader)
-        if (!apiKey) return Response.json({ success: false, message: 'Invalid API key' }, { status: 401 })
-        if (apiKey) {
-          userId = apiKey.userId
-          apiKeyId = apiKey.id
-        }
-      }
-    }
-
-    // ── Rate Limiting ──────────────────────────────────────────────────────
-    const ip = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || 'unknown'
-    const identifier = userId
-      ? apiKeyId
-        ? `apikey:${userId}`   // API key requests
-        : `user:${userId}`     // Authenticated session
-      : `ip:${ip}`             // Anonymous by IP
-    const limitConfig = apiKeyId
-      ? RATE_LIMITS.apiKey
-      : userId
-        ? RATE_LIMITS.authenticated
-        : RATE_LIMITS.anonymous
-    const { allowed, remaining, reset } = await checkRateLimit(identifier, limitConfig)
-    if (!allowed) {
-      return Response.json(
-        { success: false, message: 'Too many requests. Please slow down.' },
-        {
-          status: 429,
-          headers: {
-            'X-RateLimit-Limit': String(limitConfig.limit),
-            'X-RateLimit-Remaining': '0',
-            'X-RateLimit-Reset': String(reset),
-            'Retry-After': String(Math.max(1, reset - Math.floor(Date.now() / 1000))),
-          },
-        }
-      )
-    }
-
-    // ── Validate expiry ────────────────────────────────────────────────────
-    const options = await validateLinkOptions(body)
-    const expiryDate = options.expiresAt || null
-    const { iosUrl, androidUrl, webhookUrl, webhookSecret } = options
-    if (customAlias != null && typeof customAlias !== 'string') throw new ValidationError('Alias must be a string')
-
-    let shortCode
-    let urlRecord
-
-    const dbInsert = async (code) => {
-      urlRecord = await prisma.url.create({
-        data: {
-          shortCode: code,
-          originalUrl: url,
-          iosUrl: iosUrl || null,
-          androidUrl: androidUrl || null,
-          webhookUrl: webhookUrl || null,
-          webhookSecret: webhookSecret || null,
-          customAlias: customAlias || null,
-          userId,
-          apiKeyId,
-          expiresAt: expiryDate,
-        },
-      })
-    }
-
-    if (customAlias) {
-      const validation = validateAlias(customAlias)
-      if (!validation.valid) {
-        return Response.json({ success: false, message: validation.error }, { status: 400 })
-      }
-
-      // Check alias availability
-      const existing = await prisma.url.findUnique({ where: { shortCode: customAlias } })
-      if (existing) {
-        return Response.json({ success: false, message: 'This custom alias is already taken' }, { status: 409 })
-      }
-
-      shortCode = customAlias
-      await dbInsert(shortCode)
-      shortCodeBloom.add(shortCode)
-    } else {
-      // Auto-generate unique short code with optimistic Bloom filter
-      shortCode = await generateUniqueCode({
-        bloomFilter: shortCodeBloom,
-        dbInsertCallback: dbInsert,
-        dbCheckCallback: async (code) => {
-          const existing = await prisma.url.findUnique({ where: { shortCode: code } })
-          return !!existing;
-        }
-      })
-    }
-
-    // ── Prime Redis cache (warm cache on creation) ────────────────────────
-    await cacheSet(shortCode, {
-      originalUrl: url,
-      iosUrl: iosUrl || null,
-      androidUrl: androidUrl || null,
-      webhookUrl: webhookUrl || null,
-      webhookSecret: webhookSecret || null,
-      clickCount: 0,
-      isActive: true,
-      expiresAt: expiryDate ? expiryDate.toISOString() : null,
+    const identity = await identityFor(request)
+    const headers = await enforceLimit(request, identity)
+    const body = await readJson(request)
+    const output = await createLink(
+      body,
+      identity,
+      request.headers.get('idempotency-key')
+    )
+    if (output.link) await cacheSet(output.link.shortCode, output.link)
+    logger.info('creation.completed', { durationMs: Date.now() - started })
+    return Response.json(output.result, {
+      headers: { ...headers, 'Idempotency-Replayed': String(output.replayed) },
     })
-
-    // Global totals are read from PostgreSQL, including bulk imports.
-
-    // ── Generate QR code ──────────────────────────────────────────────────
-    const shortUrl = `${process.env.NEXT_PUBLIC_HOST}/${shortCode}`
-    const qrDataUrl = await QRCode.toDataURL(shortUrl, {
-      width: 256,
-      margin: 2,
-      color: { dark: '#1e1b4b', light: '#ffffff' },
-    })
-
-    return Response.json({
-      success: true,
-      shortCode,
-      shortUrl,
-      originalUrl: url,
-      qrDataUrl,
-      expiresAt: expiryDate,
-      createdAt: urlRecord.createdAt,
-    }, { headers: { 'X-RateLimit-Limit': String(limitConfig.limit), 'X-RateLimit-Remaining': String(remaining), 'X-RateLimit-Reset': String(reset) } })
-  } catch (err) {
-    if (err instanceof ValidationError) return Response.json({ success: false, message: err.message }, { status: 400 })
-    if (err.code === 'P2002') return Response.json({ success: false, message: 'This custom alias is already taken' }, { status: 409 })
-    console.error('[generate] Error:', err)
-    return Response.json({ success: false, message: 'Internal server error' }, { status: 500 })
+  } catch (error) {
+    return errorResponse(error)
   }
 }

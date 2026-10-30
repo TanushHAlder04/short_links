@@ -25,7 +25,7 @@ export default function Footer() {
               <span style={{ fontWeight: 800, fontSize: '1rem' }}>Short<span className="gradient-text">Links</span></span>
             </Link>
             <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', lineHeight: 1.5, maxWidth: 380 }}>
-              A production-grade URL shortening platform engineered for high performance and scale. Powered by Next.js 16, PostgreSQL, and Upstash Redis caching with dual Bloom filter layers, sliding window rate limiting, and real-time click analytics.
+              A production-grade URL shortening platform engineered for high performance and scale. Powered by Next.js 16, PostgreSQL, and Upstash Redis caching, distributed rate limiting, and background click analytics through Inngest.
             </p>
           </div>
 

@@ -1,15 +1,9 @@
-// app/api/links/import/route.js
-// Batch CSV / JSON link import with row-by-row validation, bloom filter gatekeeping, and rate limiting.
-
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-import { prisma } from '@/lib/prisma'
-import { getAuthUserId } from '@/lib/apikeys'
-import { checkRateLimit } from '@/lib/ratelimit'
-import { generateUniqueCode, validateAlias, isValidUrl } from '@/lib/shortcode'
-import { shortCodeBloom } from '@/lib/bloom'
+import { identityFor } from '@/lib/identity'
+import { enforceLimit } from '@/lib/ratelimit'
+import { readJson, readText } from '@/lib/request'
+import { createLink } from '@/lib/services/links'
 import { cacheSet } from '@/lib/redis'
-
+import { AppError, errorResponse } from '@/lib/errors'
 function parseCsvToObjects(csvText) {
   const lines = csvText.split(/\r?\n/).filter((line) => line.trim().length > 0)
   if (lines.length < 2) return []
@@ -38,7 +32,9 @@ function parseCsvToObjects(csvText) {
     return matches
   }
 
-  const headers = parseRow(lines[0]).map((h) => h.toLowerCase().replace(/[^a-z0-9]/g, ''))
+  const headers = parseRow(lines[0]).map((h) =>
+    h.toLowerCase().replace(/[^a-z0-9]/g, '')
+  )
   const rows = []
 
   for (let i = 1; i < lines.length; i++) {
@@ -55,151 +51,62 @@ function parseCsvToObjects(csvText) {
 
 export async function POST(request) {
   try {
-    const session = await getServerSession(authOptions)
-    const userId = await getAuthUserId(request, session)
-
-    if (!userId) {
-      return Response.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const { allowed, reset } = await checkRateLimit(`links-import:${userId}`, {
-      limit: 5,
-      windowMs: 60_000,
-    })
-
-    if (!allowed) {
-      return Response.json(
-        { error: 'Too many import requests. Please slow down.' },
-        { status: 429, headers: { 'X-RateLimit-Reset': String(reset), 'Retry-After': '60' } }
-      )
-    }
-
-    const contentType = request.headers.get('content-type') || ''
-    let rawRows = []
-
-    if (contentType.includes('application/json')) {
-      const body = await request.json()
-      rawRows = Array.isArray(body.rows) ? body.rows : []
-    } else {
-      const text = await request.text()
-      rawRows = parseCsvToObjects(text)
-    }
-
-    if (!rawRows || rawRows.length === 0) {
-      return Response.json({ error: 'No link records found in request payload' }, { status: 400 })
-    }
-
-    if (rawRows.length > 100) {
-      return Response.json({ error: 'Maximum 100 links allowed per bulk import batch' }, { status: 400 })
-    }
-
+    const identity = await identityFor(request, { required: true }),
+      headers = await enforceLimit(request, identity, 'import')
+    const rows = request.headers
+      .get('content-type')
+      ?.includes('application/json')
+      ? (await readJson(request, 512000)).rows
+      : parseCsvToObjects(await readText(request, 512000))
+    if (!Array.isArray(rows) || !rows.length || rows.length > 100)
+      throw new AppError('Import between 1 and 100 rows')
     const results = []
-    let imported = 0
-    let failed = 0
-
-    // Process rows sequentially to maintain Bloom filter & rate limit stability
-    for (let index = 0; index < rawRows.length; index++) {
-      const row = rawRows[index]
-      if (!row || typeof row !== 'object' || Array.isArray(row) || ['originalurl', 'url', 'originalUrl', 'customalias', 'alias', 'customAlias', 'iosurl', 'iosUrl', 'androidurl', 'androidUrl'].some((key) => row[key] != null && typeof row[key] !== 'string')) {
-        failed++
-        results.push({ row: index + 1, status: 'failed', error: 'Row values must be strings', input: row })
-        continue
-      }
-      const originalUrl = row.originalurl || row.url || row.originalUrl
-      const customAlias = (row.customalias || row.alias || row.customAlias || '').trim()
-      const iosUrl = (row.iosurl || row.iosUrl || '').trim()
-      const androidUrl = (row.androidurl || row.androidUrl || '').trim()
-
-      if (!originalUrl || !isValidUrl(originalUrl)) {
-        failed++
-        results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: 'Invalid or missing HTTP/HTTPS URL' })
-        continue
-      }
-
-      if (iosUrl && !isValidUrl(iosUrl)) {
-        failed++
-        results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: 'Invalid iOS URL' })
-        continue
-      }
-
-      if (androidUrl && !isValidUrl(androidUrl)) {
-        failed++
-        results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: 'Invalid Android URL' })
-        continue
-      }
-
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i]
       try {
-        let shortCode
-        let linkRecord
-
-        const dbInsert = async (code) => {
-          linkRecord = await prisma.url.create({
-            data: {
-              shortCode: code,
-              originalUrl,
-              iosUrl: iosUrl || null,
-              androidUrl: androidUrl || null,
-              customAlias: customAlias || null,
-              userId,
-            },
-          })
+        if (!row || typeof row !== 'object' || Array.isArray(row))
+          throw new AppError('Invalid row')
+        const body = {
+          url: row.url || row.originalurl || row.originalUrl,
+          customAlias:
+            row.customAlias || row.customalias || row.alias || undefined,
+          iosUrl: row.iosUrl || row.iosurl || undefined,
+          androidUrl: row.androidUrl || row.androidurl || undefined,
+          desktopUrl: row.desktopUrl || row.desktopurl || undefined,
+          expiresAt: row.expiresAt || row.expiresat || undefined,
         }
-
-        if (customAlias) {
-          const val = validateAlias(customAlias)
-          if (!val.valid) {
-            failed++
-            results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: val.error })
-            continue
-          }
-
-          const existing = await prisma.url.findUnique({ where: { shortCode: customAlias } })
-          if (existing) {
-            failed++
-            results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: 'Custom alias is already taken' })
-            continue
-          }
-
-          shortCode = customAlias
-          await dbInsert(shortCode)
-          shortCodeBloom.add(shortCode)
-        } else {
-          shortCode = await generateUniqueCode({
-            bloomFilter: shortCodeBloom,
-            dbInsertCallback: dbInsert,
-            dbCheckCallback: async (code) => {
-              const existing = await prisma.url.findUnique({ where: { shortCode: code } })
-              return !!existing
-            },
-          })
-        }
-
-        await cacheSet(shortCode, {
-          originalUrl,
-          iosUrl: iosUrl || null,
-          androidUrl: androidUrl || null,
-          clickCount: 0,
-          isActive: true,
-          expiresAt: null,
+        const output = await createLink(body, identity)
+        await cacheSet(output.link.shortCode, output.link)
+        results.push({
+          row: i + 1,
+          status: 'success',
+          shortCode: output.link.shortCode,
+          originalUrl: output.link.originalUrl,
         })
-
-        imported++
-        results.push({ row: index + 1, input: row, originalUrl, shortCode, status: 'success' })
-      } catch (err) {
-        failed++
-        results.push({ row: index + 1, input: row, originalUrl, status: 'failed', error: err.code === 'P2002' ? 'Custom alias is already taken' : 'Could not create link' })
+      } catch (error) {
+        results.push({
+          row: i + 1,
+          status: 'failed',
+          input: row,
+          error:
+            error instanceof AppError
+              ? error.message
+              : 'Creation temporarily unavailable',
+        })
       }
     }
-
-    return Response.json({
-      success: true,
-      total: rawRows.length,
-      imported,
-      failed,
-      results,
-    })
+    const imported = results.filter((r) => r.status === 'success').length
+    return Response.json(
+      {
+        success: true,
+        total: rows.length,
+        imported,
+        failed: rows.length - imported,
+        results,
+      },
+      { headers }
+    )
   } catch (error) {
-    console.error('POST /api/links/import error:', error)
-    return Response.json({ error: 'Internal server error' }, { status: 500 })
+    return errorResponse(error)
   }
 }

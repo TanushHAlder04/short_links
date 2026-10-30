@@ -4,6 +4,10 @@ import { useState, useEffect } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter, useParams } from 'next/navigation'
 import Link from 'next/link'
+import ReportControls from '@/components/ReportControls'
+import TrafficFilter from '@/components/TrafficFilter'
+import WebhookDeliveries from '@/components/WebhookDeliveries'
+import LinkEditor from '@/components/LinkEditor'
 import {
   ArrowLeft, Copy, Check, ExternalLink, QrCode, BarChart3,
   Globe, Monitor, Smartphone, Tablet, MousePointerClick, Link2,
@@ -41,7 +45,8 @@ export default function LinkAnalytics() {
   const [copied, setCopied] = useState(false)
   const [showQR, setShowQR] = useState(false)
   const [qrUrl, setQrUrl] = useState(null)
-  const [includeBots, setIncludeBots] = useState(false)
+  const [traffic, setTraffic] = useState('human')
+  const [range, setRange] = useState({range:'30'})
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -49,14 +54,16 @@ export default function LinkAnalytics() {
 
   useEffect(() => {
     if (status !== 'authenticated') return
+    const controller = new AbortController()
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true)
-    fetch(`/api/analytics/${shortCode}?includeBots=${includeBots}`)
+    fetch(`/api/analytics/${shortCode}?${new URLSearchParams({...range,traffic})}`, {signal:controller.signal})
       .then(r => r.json())
       .then(d => { if (d.error) setError(d.error); else { setError(''); setData(d) } })
-      .catch(() => setError('Failed to load analytics'))
-      .finally(() => setLoading(false))
-  }, [shortCode, status, includeBots])
+      .catch(e => {if(e.name !== 'AbortError')setError('Failed to load analytics')})
+      .finally(() => {if(!controller.signal.aborted)setLoading(false)})
+    return () => controller.abort()
+  }, [shortCode, status, traffic, range])
 
   const handleCopy = async () => {
     await navigator.clipboard.writeText(`${window.location.origin}/${shortCode}`)
@@ -64,13 +71,15 @@ export default function LinkAnalytics() {
   }
 
   const handleToggle = async () => {
-    await fetch(`/api/links/${shortCode}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: !data.url.isActive }) })
+    const response = await fetch(`/api/links/${shortCode}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ isActive: !data.url.isActive }) })
+    if (!response.ok) { setError('Could not update link; please retry'); return }
     setData(d => ({ ...d, url: { ...d.url, isActive: !d.url.isActive } }))
   }
 
   const handleDelete = async () => {
-    if (!confirm('Deactivate this link?')) return
-    await fetch(`/api/links/${shortCode}`, { method: 'DELETE' })
+    if (!confirm('Delete this link and permanently retire its code?')) return
+    const response = await fetch(`/api/links/${shortCode}`, { method: 'DELETE' })
+    if (!response.ok) { setError('Could not delete link; please retry'); return }
     router.push('/dashboard')
   }
 
@@ -79,11 +88,11 @@ export default function LinkAnalytics() {
     setShowQR(true)
   }
 
-  if (status === 'loading' || loading) {
+  if (status === 'loading' || (loading && !data)) {
     return <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}><Loader2 size={32} className="animate-spin" color="var(--accent-violet)" /></main>
   }
 
-  if (error) {
+  if (error && !data) {
     return <main style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', flexDirection: 'column', gap: 16 }}>
       <p style={{ color: '#fca5a5' }}>{error}</p>
       <Link href="/dashboard"><button className="btn-secondary">Back to Dashboard</button></Link>
@@ -141,14 +150,7 @@ export default function LinkAnalytics() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          <button
-            id="bot-toggle-btn"
-            onClick={() => setIncludeBots(!includeBots)}
-            className="btn-secondary"
-            style={{ fontSize: '0.8rem', padding: '6px 14px', background: includeBots ? 'rgba(239,68,68,0.15)' : 'transparent', color: includeBots ? '#fca5a5' : 'var(--text-secondary)' }}
-          >
-            {includeBots ? '🤖 Including Bots' : '🛡️ Bots Filtered'}
-          </button>
+          <TrafficFilter value={traffic} onChange={setTraffic} />
           <button id="copy-link-btn" onClick={handleCopy} className="btn-ghost">
             {copied ? <Check size={16} /> : <Copy size={16} />}
           </button>
@@ -163,6 +165,9 @@ export default function LinkAnalytics() {
         </div>
       </div>
 
+      <p role="alert">{error}</p>
+      <ReportControls shortCode={shortCode} traffic={traffic} range={range} onRangeChange={setRange} />
+      <LinkEditor link={data.url} onSaved={url=>setData(d=>({...d,url}))} />
       {/* Smart Redirect & Webhook Config Details */}
       {(data.url.iosUrl || data.url.androidUrl || data.url.webhookUrl) && (
         <div className="glass-card" style={{ padding: '20px 24px', marginBottom: 24, background: 'rgba(255,255,255,0.02)' }}>
@@ -208,9 +213,10 @@ export default function LinkAnalytics() {
       {/* Stat summary */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16, marginBottom: 24 }}>
         {[
-          { icon: MousePointerClick, label: 'Total Clicks', value: data.totalClicks.toLocaleString(), color: '#8b5cf6' },
+          { icon: Calendar, label: 'Selected Period Clicks', value: data.windowClicks.toLocaleString(), color: '#06b6d4' },
+          { icon: MousePointerClick, label: 'Lifetime Clicks', value: data.totalClicks.toLocaleString(), color: '#8b5cf6' },
           { icon: Calendar, label: 'Created', value: new Date(data.url.createdAt).toLocaleDateString(), color: '#06b6d4' },
-          { icon: Activity, label: 'Last 30 Days', value: data.clicksByDay.reduce((s, d) => s + d.count, 0), color: '#10b981' },
+          { icon: Activity, label: 'Selected Period', value: data.clicksByDay.reduce((s, d) => s + d.count, 0), color: '#10b981' },
           { icon: Link2, label: 'Short Code', value: shortCode, color: '#f59e0b' },
         ].map((s, i) => (
           <div key={i} className="glass-card" style={{ padding: '20px 22px' }}>
@@ -220,9 +226,11 @@ export default function LinkAnalytics() {
         ))}
       </div>
 
+      <section className="glass-card" style={{padding:24,marginBottom:20}}><h3>Operating systems</h3>{data.byOperatingSystem.map(row=><p key={row.name}>{row.name}: {row.count}</p>)}</section>
+      <WebhookDeliveries shortCode={shortCode} />
       {/* Click timeline */}
       <div className="glass-card" style={{ padding: '24px 28px', marginBottom: 24 }}>
-        <h3 style={{ fontWeight: 700, marginBottom: 20 }}>Clicks — Last 30 Days (UTC)</h3>
+        <h3 style={{ fontWeight: 700, marginBottom: 20 }}>Clicks — Selected Period (UTC)</h3>
         <div style={{ height: 220 }}>
           <Line data={lineData} options={{ ...chartDefaults, plugins: { ...chartDefaults.plugins, legend: { display: false } } }} />
         </div>

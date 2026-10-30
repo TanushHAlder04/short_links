@@ -13,11 +13,14 @@ export const authOptions = {
   // Log diagnostic codes without OAuth tokens, profiles, URLs, or secrets.
   logger: {
     error(code, metadata) {
-      console.error('[auth]', JSON.stringify({
-        code,
-        errorName: metadata?.error?.name || metadata?.name,
-        causeCode: metadata?.error?.code || metadata?.code,
-      }))
+      console.error(
+        '[auth]',
+        JSON.stringify({
+          code,
+          errorName: metadata?.error?.name || metadata?.name,
+          causeCode: metadata?.error?.code || metadata?.code,
+        })
+      )
     },
   },
 
@@ -25,12 +28,10 @@ export const authOptions = {
     GitHubProvider({
       clientId: process.env.GITHUB_ID,
       clientSecret: process.env.GITHUB_SECRET,
-      allowDangerousEmailAccountLinking: true
     }),
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID,
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-      allowDangerousEmailAccountLinking: true
     }),
   ],
 

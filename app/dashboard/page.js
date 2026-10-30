@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import AccountReports from '@/components/AccountReports'
+import TrafficFilter from '@/components/TrafficFilter'
 import {
   Link2,
   BarChart3,
@@ -298,6 +300,7 @@ export default function Dashboard() {
   const [sortBy, setSortBy] = useState('createdAt')
   const [order, setOrder] = useState('desc')
   const [copiedId, setCopiedId] = useState(null)
+  const [traffic,setTraffic] = useState('human')
   const [search, setSearch] = useState('')
   const [query, setQuery] = useState('')
   const [loadError, setLoadError] = useState('')
@@ -320,7 +323,7 @@ export default function Dashboard() {
       const requestSortBy = sortBy === 'status' ? 'createdAt' : sortBy
 
       const res = await fetch(
-        `/api/links?page=${page}&limit=15&sortBy=${requestSortBy}&order=${order}&q=${encodeURIComponent(query)}`
+        `/api/links?page=${page}&limit=15&sortBy=${requestSortBy}&order=${order}&traffic=${traffic}&q=${encodeURIComponent(query)}`
       )
 
       const data = await res.json()
@@ -337,7 +340,7 @@ export default function Dashboard() {
     } finally {
       if (id === requestId.current) setLoading(false)
     }
-  }, [page, sortBy, order, query])
+  }, [page, sortBy, order, query, traffic])
 
   useEffect(() => {
     if (status === 'unauthenticated') router.push('/login')
@@ -447,7 +450,7 @@ export default function Dashboard() {
   }
 
   const handleDelete = async (link) => {
-    if (!confirm(`Delete /${link.shortCode}? This will deactivate the link.`)) return
+    if (!confirm(`Delete /${link.shortCode}? This permanently retires its code.`)) return
 
     await fetch(`/api/links/${link.shortCode}`, {
       method: 'DELETE',
@@ -521,6 +524,8 @@ export default function Dashboard() {
 
   return (
     <main style={{ padding: '120px 24px 40px', maxWidth: 1200, margin: '0 auto' }}>
+      <div style={{marginBottom:20,maxWidth:240}}><TrafficFilter value={traffic} onChange={value=>{setTraffic(value);setPage(1)}} /></div>
+      <AccountReports traffic={traffic} />
       {/* Header */}
       <div
         style={{

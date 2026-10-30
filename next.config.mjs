@@ -11,7 +11,9 @@ const ContentSecurityPolicy = `
   form-action 'self' https://accounts.google.com https://github.com;
   frame-ancestors 'none';
   base-uri 'self';
-`.replace(/\s{2,}/g, ' ').trim()
+`
+  .replace(/\s{2,}/g, ' ')
+  .trim()
 
 const nextConfig = {
   async headers() {
@@ -25,7 +27,10 @@ const nextConfig = {
           { key: 'X-Content-Type-Options', value: 'nosniff' },
           { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
           { key: 'X-XSS-Protection', value: '1; mode=block' },
-          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
+          {
+            key: 'Strict-Transport-Security',
+            value: 'max-age=31536000; includeSubDomains; preload',
+          },
         ],
       },
       {
@@ -34,7 +39,10 @@ const nextConfig = {
         headers: [
           { key: 'Access-Control-Allow-Origin', value: '*' },
           { key: 'Access-Control-Allow-Methods', value: 'GET, POST, OPTIONS' },
-          { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization' },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization, Idempotency-Key',
+          },
           { key: 'Access-Control-Max-Age', value: '86400' },
         ],
       },
@@ -42,9 +50,18 @@ const nextConfig = {
         // Authenticated API routes — same-origin only
         source: '/api/(links|keys|analytics|stats)/:path*',
         headers: [
-          { key: 'Access-Control-Allow-Origin', value: process.env.NEXT_PUBLIC_HOST || 'http://localhost:3000' },
-          { key: 'Access-Control-Allow-Methods', value: 'GET, POST, PATCH, DELETE, OPTIONS' },
-          { key: 'Access-Control-Allow-Headers', value: 'Content-Type, Authorization' },
+          {
+            key: 'Access-Control-Allow-Origin',
+            value: process.env.NEXT_PUBLIC_HOST || 'http://localhost:3000',
+          },
+          {
+            key: 'Access-Control-Allow-Methods',
+            value: 'GET, POST, PATCH, DELETE, OPTIONS',
+          },
+          {
+            key: 'Access-Control-Allow-Headers',
+            value: 'Content-Type, Authorization, Idempotency-Key',
+          },
           { key: 'Access-Control-Allow-Credentials', value: 'true' },
         ],
       },

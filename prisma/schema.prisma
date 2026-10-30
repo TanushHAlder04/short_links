@@ -63,21 +63,30 @@ model User {
 }
 
 model Url {
-  id            String    @id @default(cuid())
-  shortCode     String    @unique
-  originalUrl   String    @db.Text
-  iosUrl        String?   @db.Text
-  androidUrl    String?   @db.Text
-  webhookUrl    String?   @db.Text
-  webhookSecret String?   @db.Text
+  id            String               @id @default(cuid())
+  shortCode     String               @unique
+  originalUrl   String               @db.Text
+  iosUrl        String?              @db.Text
+  androidUrl    String?              @db.Text
+  webhookUrl    String?              @db.Text
+  webhookSecret String?              @db.Text
   customAlias   String?
   userId        String?
   apiKeyId      String?
   expiresAt     DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  isActive      Boolean   @default(true)
-  clickCount    Int       @default(0)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  isActive      Boolean              @default(true)
+  clickCount    Int                  @default(0) // Legacy compatibility; aggregates are authoritative.
+  desktopUrl    String?              @db.Text
+  normalizedUrl String?              @db.Text
+  deletedAt     DateTime?
+  version       Int                  @default(1)
+  lifetimeStats LinkLifetimeStats?
+  dailyStats    LinkDailyStats[]
+  dimensions    LinkDailyDimension[]
+  events        ClickEvent[]
+  deliveries    WebhookDelivery[]
 
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
   clicks Click[]
@@ -86,6 +95,7 @@ model Url {
   @@index([createdAt])
   @@index([expiresAt])
   @@index([userId, createdAt])
+  @@index([userId, deletedAt])
   @@index([isActive])
 }
 
@@ -121,4 +131,97 @@ model ApiKey {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+// New raw store. Legacy Click rows are preserved until validated backfill.
+model ClickEvent {
+  eventId         String   @id
+  linkId          String
+  clickedAt       DateTime
+  country         String
+  device          String
+  browser         String
+  operatingSystem String
+  referrerDomain  String
+  isBot           Boolean
+  ipHash          String?
+  link            Url      @relation(fields: [linkId], references: [shortCode], onDelete: Restrict)
+
+  @@index([clickedAt, eventId])
+  @@index([linkId, clickedAt])
+}
+
+model LinkLifetimeStats {
+  linkId      String   @id
+  totalClicks Int      @default(0)
+  humanClicks Int      @default(0)
+  botClicks   Int      @default(0)
+  updatedAt   DateTime @updatedAt
+  link        Url      @relation(fields: [linkId], references: [shortCode], onDelete: Restrict)
+}
+
+model LinkDailyStats {
+  linkId      String
+  date        DateTime @db.Date
+  totalClicks Int      @default(0)
+  humanClicks Int      @default(0)
+  botClicks   Int      @default(0)
+  link        Url      @relation(fields: [linkId], references: [shortCode], onDelete: Restrict)
+
+  @@id([linkId, date])
+}
+
+model LinkDailyDimension {
+  linkId         String
+  date           DateTime @db.Date
+  dimensionType  String
+  dimensionValue String
+  totalClicks    Int      @default(0)
+  humanClicks    Int      @default(0)
+  botClicks      Int      @default(0)
+  link           Url      @relation(fields: [linkId], references: [shortCode], onDelete: Restrict)
+
+  @@id([linkId, date, dimensionType, dimensionValue])
+}
+
+model CreationRequest {
+  scope       String
+  keyHash     String
+  fingerprint String
+  result      Json
+  expiresAt   DateTime
+
+  @@id([scope, keyHash])
+  @@index([expiresAt])
+}
+
+model WebhookDelivery {
+  id              String    @id @default(uuid())
+  eventId         String    @unique
+  sourceEventId   String
+  linkId          String
+  milestone       Int
+  destination     String    @db.Text
+  status          String    @default("pending")
+  attemptCount    Int       @default(0)
+  retryGeneration Int       @default(0)
+  lastAttemptAt   DateTime?
+  nextAttemptAt   DateTime?
+  responseStatus  Int?
+  errorSummary    String?
+  createdAt       DateTime  @default(now())
+  deliveredAt     DateTime?
+  link            Url       @relation(fields: [linkId], references: [shortCode], onDelete: Restrict)
+
+  @@unique([linkId, milestone])
+  @@index([status, nextAttemptAt])
+  @@index([sourceEventId])
+}
+
+model MigrationProgress {
+  id          String    @id
+  cursor      String?
+  processed   Int       @default(0)
+  validatedAt DateTime?
+  updatedAt   DateTime  @updatedAt
 }

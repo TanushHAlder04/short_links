@@ -1,116 +1,23 @@
-// app/api/analytics/[shortCode]/route.js
-// Returns analytics data for a given short code.
-// Protected: requires session or valid API key.
-
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/app/api/auth/[...nextauth]/route'
-import { prisma } from '@/lib/prisma'
-import { getAuthUserId } from '@/lib/apikeys'
-
+import { identityFor } from '@/lib/identity'
+import { enforceLimit } from '@/lib/ratelimit'
+import { linkAnalytics } from '@/lib/services/queries'
+import { errorResponse } from '@/lib/errors'
 export async function GET(request, { params }) {
-  const { shortCode } = await params
-
-  // ── Auth check ─────────────────────────────────────────────────────────────
-  const session = await getServerSession(authOptions)
-  const userId = await getAuthUserId(request, session)
-
-  if (!userId) {
-    return Response.json({ error: 'Unauthorized' }, { status: 401 })
+  try {
+    const identity = await identityFor(request, { required: true }),
+      headers = await enforceLimit(request, identity, 'dashboard'),
+      { shortCode } = await params,
+      p = new URL(request.url).searchParams
+    return Response.json(
+      await linkAnalytics(
+        shortCode,
+        identity.userId,
+        p.get('traffic') || (p.get('includeBots') === 'true' ? 'all' : 'human'),
+        undefined, undefined, p
+      ),
+      { headers: { ...headers, 'Cache-Control': 'private, no-store' } }
+    )
+  } catch (error) {
+    return errorResponse(error)
   }
-
-  // ── Verify ownership ───────────────────────────────────────────────────────
-  const urlRecord = await prisma.url.findUnique({
-    where: { shortCode },
-    select: { id: true, userId: true, shortCode: true, originalUrl: true, iosUrl: true, androidUrl: true, webhookUrl: true, clickCount: true, createdAt: true, isActive: true, expiresAt: true },
-  })
-
-  if (!urlRecord) {
-    return Response.json({ error: 'Link not found' }, { status: 404 })
-  }
-
-  if (urlRecord.userId !== userId) {
-    return Response.json({ error: 'Forbidden' }, { status: 403 })
-  }
-
-  // ── Parse bot filter ───────────────────────────────────────────────────────
-  const { searchParams } = new URL(request.url)
-  const includeBots = searchParams.get('includeBots') === 'true'
-
-  // ── Clicks over last 30 days ───────────────────────────────────────────────
-  const thirtyDaysAgo = new Date()
-  thirtyDaysAgo.setUTCHours(0, 0, 0, 0)
-  thirtyDaysAgo.setUTCDate(thirtyDaysAgo.getUTCDate() - 29)
-
-  const windowEnd = new Date(thirtyDaysAgo.getTime() + 30 * 86400000)
-  const whereClause = { shortCode, timestamp: { gte: thirtyDaysAgo, lt: windowEnd } }
-  if (!includeBots) {
-    whereClause.isBot = false
-  }
-
-  const totalClicks = await prisma.click.count({ where: { shortCode, ...(includeBots ? {} : { isBot: false }) } })
-  const clicks = await prisma.click.findMany({
-    where: whereClause,
-    select: { timestamp: true, device: true, browser: true, country: true, referrer: true, isBot: true },
-  })
-
-  // Group clicks by day
-  const clicksByDay = {}
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(thirtyDaysAgo.getTime() + (29 - i) * 86400000)
-    const key = d.toISOString().split('T')[0]
-    clicksByDay[key] = 0
-  }
-  clicks.forEach((c) => {
-    const key = c.timestamp.toISOString().split('T')[0]
-    if (key in clicksByDay) clicksByDay[key]++
-  })
-
-  // Group by device
-  const deviceMap = Object.create(null)
-  clicks.forEach((c) => {
-    const k = c.device || 'Unknown'
-    deviceMap[k] = (deviceMap[k] || 0) + 1
-  })
-
-  // Group by browser
-  const browserMap = Object.create(null)
-  clicks.forEach((c) => {
-    const k = c.browser || 'Unknown'
-    browserMap[k] = (browserMap[k] || 0) + 1
-  })
-
-  // Group by country
-  const countryMap = Object.create(null)
-  clicks.forEach((c) => {
-    const k = c.country || 'Unknown'
-    countryMap[k] = (countryMap[k] || 0) + 1
-  })
-
-  // Group by referrer
-  const referrerMap = Object.create(null)
-  clicks.forEach((c) => {
-    const k = c.referrer || 'Direct'
-    // Normalize referrer to domain
-    try { const u = new URL(k); referrerMap[u.hostname] = (referrerMap[u.hostname] || 0) + 1 }
-    catch { referrerMap[k] = (referrerMap[k] || 0) + 1 }
-  })
-
-  const topReferrers = Object.entries(referrerMap)
-    .sort(([, a], [, b]) => b - a)
-    .slice(0, 10)
-    .map(([name, count]) => ({ name, count }))
-
-  return Response.json({
-    url: urlRecord,
-    totalClicks,
-    windowClicks: clicks.length,
-    includeBots,
-    timezone: 'UTC',
-    clicksByDay: Object.entries(clicksByDay).map(([date, count]) => ({ date, count })),
-    byDevice: Object.entries(deviceMap).map(([name, count]) => ({ name, count })),
-    byBrowser: Object.entries(browserMap).sort(([,a],[,b]) => b-a).slice(0, 8).map(([name, count]) => ({ name, count })),
-    byCountry: Object.entries(countryMap).sort(([,a],[,b]) => b-a).slice(0, 10).map(([name, count]) => ({ name, count })),
-    topReferrers,
-    windowDays: 30,
-  })
 }
