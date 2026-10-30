@@ -22,7 +22,7 @@ jobs:
       TEST_UPSTASH_URL: ${{ secrets.TEST_UPSTASH_URL }}
       TEST_UPSTASH_TOKEN: ${{ secrets.TEST_UPSTASH_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: 22
