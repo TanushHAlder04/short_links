@@ -1,4 +1,4 @@
-// This is your Prisma schema file for the ShortLinks analytics platform
+// Prisma schema file for the ShortLinks analytics platform
 // Database: PostgreSQL (Supabase)
 
 generator client {
@@ -7,6 +7,23 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum DeliveryStatus {
+  pending
+  delivering
+  delivered
+  failed
+}
+
+enum DimensionType {
+  country
+  device
+  browser
+  operatingSystem
+  referrerDomain
 }
 
 // ─── NextAuth Required Models ─────────────────────────────────────────────────
@@ -70,7 +87,7 @@ model Url {
   androidUrl    String?              @db.Text
   webhookUrl    String?              @db.Text
   webhookSecret String?              @db.Text
-  customAlias   String?
+  customAlias   String?              @unique
   userId        String?
   apiKeyId      String?
   expiresAt     DateTime?
@@ -89,13 +106,14 @@ model Url {
   deliveries    WebhookDelivery[]
 
   user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+  apiKey ApiKey? @relation(fields: [apiKeyId], references: [id], onDelete: SetNull)
   clicks Click[]
 
-  @@index([userId])
   @@index([createdAt])
   @@index([expiresAt])
   @@index([userId, createdAt])
   @@index([userId, deletedAt])
+  @@index([apiKeyId])
   @@index([isActive])
 }
 
@@ -128,7 +146,8 @@ model ApiKey {
   lastUsed  DateTime?
   isActive  Boolean   @default(true)
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  urls Url[]
 
   @@index([userId])
 }
@@ -145,41 +164,43 @@ model ClickEvent {
   referrerDomain  String
   isBot           Boolean
   ipHash          String?
-  link            Url      @relation(fields: [linkId], references: [shortCode], onDelete: Restrict)
+  link            Url      @relation(fields: [linkId], references: [shortCode], onDelete: Cascade)
 
   @@index([clickedAt, eventId])
   @@index([linkId, clickedAt])
 }
 
 model LinkLifetimeStats {
-  linkId      String   @id
-  totalClicks Int      @default(0)
-  humanClicks Int      @default(0)
-  botClicks   Int      @default(0)
-  updatedAt   DateTime @updatedAt
-  link        Url      @relation(fields: [linkId], references: [shortCode], onDelete: Restrict)
+  linkId         String   @id
+  totalClicks    Int      @default(0)
+  humanClicks    Int      @default(0)
+  botClicks      Int      @default(0)
+  uniqueVisitors Int      @default(0)
+  updatedAt      DateTime @updatedAt
+  link           Url      @relation(fields: [linkId], references: [shortCode], onDelete: Cascade)
 }
 
 model LinkDailyStats {
-  linkId      String
-  date        DateTime @db.Date
-  totalClicks Int      @default(0)
-  humanClicks Int      @default(0)
-  botClicks   Int      @default(0)
-  link        Url      @relation(fields: [linkId], references: [shortCode], onDelete: Restrict)
+  linkId         String
+  date           DateTime @db.Date
+  totalClicks    Int      @default(0)
+  humanClicks    Int      @default(0)
+  botClicks      Int      @default(0)
+  uniqueVisitors Int      @default(0)
+  link           Url      @relation(fields: [linkId], references: [shortCode], onDelete: Cascade)
 
   @@id([linkId, date])
 }
 
 model LinkDailyDimension {
   linkId         String
-  date           DateTime @db.Date
-  dimensionType  String
+  date           DateTime      @db.Date
+  dimensionType  DimensionType
   dimensionValue String
-  totalClicks    Int      @default(0)
-  humanClicks    Int      @default(0)
-  botClicks      Int      @default(0)
-  link           Url      @relation(fields: [linkId], references: [shortCode], onDelete: Restrict)
+  totalClicks    Int           @default(0)
+  humanClicks    Int           @default(0)
+  botClicks      Int           @default(0)
+  link           Url           @relation(fields: [linkId], references: [shortCode], onDelete: Cascade)
 
   @@id([linkId, date, dimensionType, dimensionValue])
 }
@@ -196,22 +217,22 @@ model CreationRequest {
 }
 
 model WebhookDelivery {
-  id              String    @id @default(uuid())
-  eventId         String    @unique
+  id              String         @id @default(uuid())
+  eventId         String         @unique
   sourceEventId   String
   linkId          String
   milestone       Int
-  destination     String    @db.Text
-  status          String    @default("pending")
-  attemptCount    Int       @default(0)
-  retryGeneration Int       @default(0)
+  destination     String         @db.Text
+  status          DeliveryStatus @default(pending)
+  attemptCount    Int            @default(0)
+  retryGeneration Int            @default(0)
   lastAttemptAt   DateTime?
   nextAttemptAt   DateTime?
   responseStatus  Int?
   errorSummary    String?
-  createdAt       DateTime  @default(now())
+  createdAt       DateTime       @default(now())
   deliveredAt     DateTime?
-  link            Url       @relation(fields: [linkId], references: [shortCode], onDelete: Restrict)
+  link            Url            @relation(fields: [linkId], references: [shortCode], onDelete: Cascade)
 
   @@unique([linkId, milestone])
   @@index([status, nextAttemptAt])
