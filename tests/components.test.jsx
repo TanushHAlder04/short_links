@@ -2,9 +2,9 @@
 import React from 'react'
 import { it, expect, vi, afterEach } from 'vitest'
 import { render, screen, fireEvent, cleanup } from '@testing-library/react'
-import DuplicateChoice from '../components/DuplicateChoice.jsx'
-import TrafficFilter from '../components/TrafficFilter.jsx'
-import WebhookDeliveries from '../components/WebhookDeliveries.jsx'
+import DuplicateChoice from '../components/DuplicateChoice.js'
+import TrafficFilter from '../components/TrafficFilter.js'
+import WebhookDeliveries from '../components/WebhookDeliveries.js'
 afterEach(() => {
   cleanup()
   vi.unstubAllGlobals()

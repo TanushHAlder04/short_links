@@ -1,18 +1,12 @@
 <div align="center">
-
 # 🔗 ShortLinks
 
 **Modern URL Shortener with a Link Analytics Dashboard**
-
 </div>
-
 
 A full-stack URL shortening platform built with Next.js 16 (App Router), PostgreSQL (Supabase), Upstash Redis, and NextAuth.js. Designed for fast redirects, comprehensive analytics, and developer integrations.
 
-
 > 🚀 **Live:** [https://short-links-mlku.vercel.app/](https://short-links-mlku.vercel.app/)  
-
-
 
 ---
 

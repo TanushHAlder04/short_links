@@ -11,7 +11,7 @@ import LinkEditor from '@/components/LinkEditor'
 import {
   ArrowLeft, Copy, Check, ExternalLink, QrCode, BarChart3,
   Globe, Monitor, Smartphone, Tablet, MousePointerClick, Link2,
-  Calendar, Activity, Trash2, ToggleRight, ToggleLeft, Loader2, Download
+  Calendar, Activity, Trash2, ToggleRight, ToggleLeft, Loader2, Download, Users
 } from 'lucide-react'
 import { Line, Doughnut, Bar } from 'react-chartjs-2'
 import {
@@ -108,6 +108,10 @@ export default function LinkAnalytics() {
       label: 'Clicks', data: data.clicksByDay.map(d => d.count),
       borderColor: '#8b5cf6', backgroundColor: 'rgba(139,92,246,0.1)',
       borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#8b5cf6', fill: true, tension: 0.4,
+    }, {
+      label: 'Unique Visitors', data: data.clicksByDay.map(d => d.uniqueVisitors || 0),
+      borderColor: '#ec4899', backgroundColor: 'rgba(236,72,153,0.05)',
+      borderWidth: 2, borderDash: [4, 4], pointRadius: 3, pointBackgroundColor: '#ec4899', fill: false, tension: 0.4,
     }],
   }
 
@@ -215,6 +219,7 @@ export default function LinkAnalytics() {
         {[
           { icon: Calendar, label: 'Selected Period Clicks', value: data.windowClicks.toLocaleString(), color: '#06b6d4' },
           { icon: MousePointerClick, label: 'Lifetime Clicks', value: data.totalClicks.toLocaleString(), color: '#8b5cf6' },
+          { icon: Users, label: 'Lifetime Unique Visitors', value: (data.uniqueVisitors || 0).toLocaleString(), color: '#ec4899' },
           { icon: Calendar, label: 'Created', value: new Date(data.url.createdAt).toLocaleDateString(), color: '#06b6d4' },
           { icon: Activity, label: 'Selected Period', value: data.clicksByDay.reduce((s, d) => s + d.count, 0), color: '#10b981' },
           { icon: Link2, label: 'Short Code', value: shortCode, color: '#f59e0b' },

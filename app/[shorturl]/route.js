@@ -12,7 +12,11 @@ export async function GET(request, { params }) {
   const { shorturl } = await params
   const result = await resolveRedirect(shorturl, request.headers.get('user-agent') || '')
   if (result.status === 404) {
-    try { await enforceLimit(request, {}, 'scanning') } catch(error) { return errorResponse(error) }
+    try { 
+      await enforceLimit(request, {}, 'scanning') 
+    } catch(error) { 
+      return errorResponse(error) 
+    }
   }
   logger.info('redirect.completed', { status: result.status, durationMs: Date.now()-started })
   if (result.status === 302) {
